@@ -8,7 +8,10 @@ The amplicon derived from 16S rRNA genes, 18S rRNA genes, internal transcribed s
 ## Dependencies
 
 Perl: Switch
-R:    vegan, DESeq2,tidyverse,hrbrthemes,viridis,Cairo,ggplot2,grid,pheatmap,RColorBrewer,ggrepel,ellipse,Tax4fun,dendextend,colorspace,plyr,reshape2
+
+R:    vegan, 
+DESeq2,tidyverse,hrbrthemes,viridis,Cairo,ggplot2,grid,pheatmap,RColorBrewer,ggrepel,ellipse,Tax4fun,dendextend,colorspace,plyr,reshape
+
 Usearch: 11.0.667
 
 ## Install
@@ -21,7 +24,7 @@ download dix-seq package, unpack and add to LINUX PATH.
 dix-seq metadata.txt pipleline
 
 
-###Citation
+## Citation
     
 Dix-seq: An integrated pipeline for fast amplicon data analysis
 
