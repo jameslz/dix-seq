@@ -1,0 +1,176 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my %metadata        = ();
+profile();
+
+my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/phylogeny};
+
+my  $placement      = qq{$project_home/placement};
+my  $clust          = qq{$project_home/clust};
+my  $runs           = qq{$project_home/runs};
+my  $report         = qq{$project_home/report};
+ 
+my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $algo           =  (exists $metadata{tree}) ? $metadata{tree} : 'distmx';
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub profile {
+
+    open( PROFILE, $config ) || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub submit {
+    
+    make_fs();
+    
+    if( $algo eq  'placement'){
+        placement_run();
+    }else{
+        distmx_run();
+    }
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $runs         \
+                          $report       \
+                          $placement    \
+                          $clust};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub distmx_run {
+
+    my $sh = qq{$runs/distmx.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT calc_distmx();
+    print EXPORT cluster_aggd();
+    print EXPORT qq{cp $datasets/zotu_table_norm.txt $report ;\n};
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub calc_distmx {
+ 
+  my $cmd   = qq{$binaries/usearch                              \
+                    -calc_distmx $datasets/zotus.fasta          \
+                    -tabbedout $clust/distmx.txt                \
+                    -maxdist 0.2 -termdist 0.3  ;\n};
+     $cmd   =~ s/\s+\n\s+/ /msg;
+  return  $cmd;
+
+}
+
+sub cluster_aggd {
+
+  my $cmd   = qq{$binaries/usearch                              \
+                    -cluster_aggd $clust/distmx.txt             \
+                    -treeout $report/zotus.tree                 \
+                    -clusterout $clust/clusters.txt             \
+                    -id 0.80 -linkage max;\n};
+     $cmd   =~ s/\s+\n\s+/ /msg;
+  return  $cmd;
+
+}
+
+sub placement_run {
+    
+    my $sh = qq{$runs/placement.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    if(-e qq{$placement/placement_working}){
+       print EXPORT qq{rm -rf $placement/placement_working;\n};
+    }
+    
+    print EXPORT place_seqs();
+    print EXPORT labels();
+    print EXPORT subtree();
+    print EXPORT subzotu();
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub place_seqs {
+
+  my $para  = (exists $metadata{picrust2_para}) ? $metadata{picrust2_para} : " ";
+
+  my $cmd   = qq{place_seqs.py                 \
+                   -s  $datasets/zotus.fasta  \
+                   -o  $placement/placed.tree \
+                   -p  $metadata{cpus}        \
+                   --intermediate  $placement/placement_working ;\n};
+     $cmd   =~ s/\s+\n\s+/ /msg;
+
+  return  $cmd;
+
+}
+
+sub labels {
+  
+    my $cmd = qq{$binaries/fastx-utils view   \
+                    $placement/placement_working/study_seqs_hmmalign.fasta \
+                 >$placement/zotus.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return  $cmd;
+
+}
+
+sub subtree {
+  
+  my $cmd   = qq{$binaries/usearch                       \
+                    -tree_subset $placement/placed.tree  \
+                    -labels $placement/zotus.txt         \
+                    -newickout $report/zotus.tree        \
+                    -log $placement/subtree.log ;\n};
+     $cmd   =~ s/\s+\n\s+/ /msg;
+  return  $cmd;
+
+}
+
+sub subzotu {
+  
+  my $cmd   = qq{$binaries/tsv-utils subset              \
+                    $datasets/zotu_table_norm.txt        \
+                    $placement/zotus.txt                 \
+                >$report/zotu_table_norm.txt ;\n};
+     $cmd   =~ s/\s+\n\s+/ /msg;
+  return  $cmd;
+
+}
+

@@ -1,0 +1,28 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+die "Usage:perl $0 <lib> <reads>" if(@ARGV != 2);
+my ($lib, $reads )  = @ARGV;
+
+links();
+
+exit;
+
+sub links {
+
+    open( DATA, qq{$lib/barcodes.txt} )   || die "[ERR]: can't open $lib/barcodes.txt. \n";
+    while (<DATA>) {
+        
+        chomp;
+        next if (/^#/ || /^$/);
+        my @its = split /\t/, $_;
+        next if(! -e qq{$lib/$its[0]\_1.fastq});
+        my $cmd = qq{ln -fs $lib/$its[0]\_\?.fastq $reads};
+        system $cmd;
+
+    }
+    close DATA;
+  
+}

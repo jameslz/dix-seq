@@ -1,0 +1,163 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config)        = @ARGV;
+
+my %metadata        = ();
+profiling();
+
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/trimming};
+my  $runs           =  qq{$project_home/runs};
+my  $reads          =  qq{$project_home/reads};
+my  $report         =  qq{$project_home/report};
+
+my  $datasets       =  $metadata{raw_data};
+my  @samples_t      =  ();
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $qual           =  (exists $metadata{qual}) ? $metadata{qual} : 33;
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    trimming_run();
+    trimming_report();
+
+}
+
+sub profiling {
+
+    open( PROFILE, $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        
+        $_ =~ s/\s+$//;
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = $_ =~ /^(\S+)\s+(.+)/;
+        next if($value eq '-');
+        $metadata{$key}  = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}}) || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+    
+    }
+    close PROFILE;
+  
+}
+
+sub make_fs {
+    
+    my $file_sys = qq{mkdir -p $report $reads $runs};
+    system $file_sys;
+
+}
+
+sub trimming_run {  
+
+    my $sh = qq{$runs/trimming.sh};    
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    foreach my $sample ( @samples_t ){   
+        print EXPORT trimmomatic( $sample );
+        print EXPORT fqchk( $sample );
+    }
+    
+    system qq{cat $sh | $binaries/gargs -v --nlines 2 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub trimmomatic {
+        
+    my $sample      = shift;
+    my $suffix      = "";
+    
+    if(-e qq{$datasets/$sample\_1.fastq}){
+        $suffix      = "fastq";
+    }elsif(-e qq{$datasets/$sample\_1.fq}){
+        $suffix      = "fq";
+    }elsif(-e qq{$datasets/$sample\_1.fastq.gz}){
+        $suffix      = "fastq.gz";
+    }elsif(-e qq{$datasets/$sample\_1.fq.gz}){
+        $suffix      = "fq.gz";
+    }else{
+        print STDERR qq{\n[ERR]: Prefix: $datasets/$sample ... check fail ...\n};
+        print STDERR qq{\n[ERR]: can't find raw data with [1/2].fastq | [1/2].fq or [1/2].fastq.gz | [1/2].fq.gz files. \n};
+        exit();
+    }
+
+    my $trim_param = (exists $metadata{trim_param} ) ?  $metadata{trim_param} : "2:30:10:2:keepBothReads SLIDINGWINDOW:4:15 LEADING:3 TRAILING:3 MINLEN:36";
+
+    my $cmd = qq{java -jar $binaries/Trimmomatic/trimmomatic.jar                              \
+                    PE -threads $metadata{threads} -phred$qual                                \
+                    $datasets/$sample\_1.$suffix $datasets/$sample\_2.$suffix                 \
+                    $reads/$sample\_1.fastq $reads/$sample\_1.singleton.fastq                 \
+                    $reads/$sample\_2.fastq $reads/$sample\_2.singleton.fastq                 \
+                    ILLUMINACLIP:$binaries/Trimmomatic/adapters/TruSeq3-PE.fa:$trim_param ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub fqchk {
+
+    my $sample = shift;
+    my $cmd    = qq{cat $reads/$sample\_1.fastq          \
+                        $reads/$sample\_2.fastq          \
+                    | $binaries/atlas-utils fqchk        \
+                        -p                               \
+                        -q $qual                         \
+                        -l $sample                       \
+                        -                                \
+                    >$reads/$sample.txt ;\n};
+        $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;  
+
+}
+
+sub trimming_report {
+
+    my $sh = qq{$runs/report.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT trimming_stats();    
+
+    close EXPORT;        
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub trimming_stats {
+    
+    my $cmd = qq{$utils/usearch-utils trimming              \
+                    $metadata{mapping_file}                 \
+                    $reads                                  \
+                >$report/trimming.stats.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

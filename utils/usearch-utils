@@ -1,0 +1,329 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Switch;
+
+my $usage = <<_EOUSAGE_;
+
+Usage: usearch-utils <command> <arguments>
+version: 0.0.1
+supports:
+
+    trimming   <mapping_file>  <path>
+    mergepairs <mapping_file>  <path>
+    pcrsearch  <mapping_file>  <path>
+    orient     <mapping_file>  <path>
+    alpha      <mapping_file>  <alpha>  <path>
+
+Licenced:
+(c) 2019-2019 - LEI ZHANG
+Logic Informatics Co.,Ltd.
+zhanglei\@logicinformatics.com
+
+
+_EOUSAGE_
+;
+
+if( ( scalar @ARGV) < 1){
+    printf STDERR $usage;
+    exit;
+
+}
+
+my  @samples_t = ();
+my  %stats_h   = ();
+my  $cmd       = shift @ARGV; 
+my  %samples_h = ();
+my  @metrics_t = ();
+my  %metrics_h = ();
+
+switch($cmd){
+
+    case 'trimming'     { trimming_run(); }
+    case 'mergepairs'   { mergepairs_run(); }
+    case 'pcrsearch'    { pcrsearch_run(); }
+    case 'orient'       { orient_run(); }
+    case 'alpha'        { alpha_run(); }
+    else                { print qq{Not support subcommond $cmd \n};};
+
+}
+
+exit;
+
+sub trimming_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($samples, $path) = @ARGV;
+    mapping_file( $samples );
+    trimming_stats( $path );
+    print_trimming();
+
+}
+
+sub trimming_stats{
+    
+    my $path = shift;    
+    foreach my $sample ( @samples_t ) {
+        load_trimming_stats ($sample, $path);
+    }
+
+}
+
+sub load_trimming_stats {
+
+    my ($sample, $path)  = @_;
+    open (DATA, qq{$path/$sample.txt})   ||  die "$!  \n";
+    while (<DATA>) {
+        chomp;
+        next if(/^#/);
+        my @t = split /\t/, $_;
+        $stats_h{ $sample } = qq{$t[1]\t$t[2]\t$t[3]\t$t[4]};
+    }
+    local $/= "\n";
+    close DATA;
+
+}
+
+sub print_trimming {
+    
+    print qq{#sample\treads\tbase\tQ20(%)\tQ30(%)\n};
+    foreach my $sample (@samples_t) {
+        print qq{$sample\t$stats_h{$sample}\n};
+    }
+
+}
+
+
+sub mergepairs_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($samples, $path) = @ARGV;
+    mapping_file( $samples );
+    mergepairs_stats( $path );
+    print_mergepairs();
+
+}
+
+sub pcrsearch_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($samples, $path) = @ARGV;
+    mapping_file( $samples );
+    pcrsearch_stats( $path );
+    print_pcrsearch();
+
+}
+
+sub mapping_file {
+
+    my $samples = shift;
+    open (DATA, $samples)   || die "$!  \n";
+    while (<DATA>) {
+        
+        chomp;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $samples_h{ $its[0] } = $its[-1];
+
+    }
+    close DATA;
+}
+
+sub print_mergepairs {
+    
+    print qq{#sample\treads\tmerged\trate(%)\n};
+    foreach my $sample (@samples_t) {
+        print qq{$sample\t$stats_h{$sample}\n};
+    }
+
+}
+
+sub mergepairs_stats{
+    
+    my $path = shift;    
+    foreach my $sample ( @samples_t ) {
+        load_mergepairs_log ($sample, $path);
+    }
+
+}
+
+sub load_mergepairs_log {
+
+    my ($sample, $path)  = @_;
+    open (DATA, qq{$path/$sample.log})   ||  die "$!  \n";
+    local $/= undef;
+    while (<DATA>) {
+        my ($pairs)        = $_ =~ /(\d+)  Pairs /;
+        my ($merged, $pct) = $_ =~ /(\d+)  Merged \(\S+, (\S+?)\%\)/;
+        $stats_h{ $sample } = qq{$pairs\t$merged\t$pct};
+    }
+    local $/= "\n";
+    close DATA;
+
+}
+
+
+sub print_pcrsearch {
+    
+    print qq{#sample\treads\tprimer_match\tplus\tminus\tnot matched\trate(%)\n};
+    foreach my $sample (@samples_t) {
+        print qq{$sample\t$stats_h{$sample}\n};
+    }
+
+}
+
+sub pcrsearch_stats{
+    
+    my $path = shift;    
+    foreach my $sample ( @samples_t ) {
+        load_pcrsearch_log ($sample, $path);
+    }
+
+}
+
+sub load_pcrsearch_log {
+
+    my ($sample, $path)  = @_;
+    open (DATA, qq{$path/$sample.log})   ||  die "$!  \n";
+    local $/= undef;
+    while (<DATA>) {
+
+        my ($plus, $minus, $fail) =  $_ =~ /\s+(\d+)\s+plus,\s+(\d+)\s+minus,\s+(\d+)\s+not matched/;
+        my $total =   $plus + $minus + $fail;
+        my $primer_match = $plus + $minus;
+        my $rate  =  sprintf( "%.2f", 100 * $primer_match/$total);
+
+        $stats_h{ $sample } = qq{$total\t$primer_match\t$plus\t$minus\t$fail\t$rate};
+    }
+    local $/= "\n";
+    close DATA;
+
+}
+
+sub orient_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($samples, $path) = @ARGV;
+    mapping_file( $samples );
+    orient_stats( $path );
+    print_orient();
+
+}
+
+sub orient_stats {
+    
+    my $path = shift;    
+    foreach my $sample ( @samples_t ) {
+        load_orient_log ($sample, $path);
+    }
+
+}
+
+sub load_orient_log {
+
+    my ($sample, $path)  = @_;
+    open (DATA, qq{$path/$sample.log})   ||  die "$!  \n";
+    local $/= undef;
+    while (<DATA>) {
+
+        #49859 plus (100.0%), 0 minus (0.0%), 0 undet. (0.0%)
+        my ($plus, $minus, $undet) =  $_ =~ /(\d+)\s+plus\s+\(\S+\),\s+(\d+)\s+minus\s+\(\S+\),\s+(\d+)\s+undet/;
+        my $total =   $plus + $minus + $undet;
+        $stats_h{ $sample } = qq{$total\t$plus\t$minus\t$undet};
+    }
+    local $/= "\n";
+    close DATA;
+
+}
+
+sub print_orient {
+    
+    print qq{#sample\treads\tplus\tminus\tundet\n};
+    foreach my $sample (@samples_t) {
+        print qq{$sample\t$stats_h{$sample}\n};
+    }
+
+}
+
+sub alpha_run {
+
+    if( @ARGV != 3 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($mapping_file, $alpha,  $path) = @ARGV;
+    mapping_file( $mapping_file );
+    load_alpha( $alpha );
+    print_alpha( $path );
+
+}
+
+sub load_alpha{
+
+    my $alpha = shift;
+    my $flag  = 0;
+    open (DATA, $alpha)   || die "$!  \n";    
+    while (<DATA>) {
+        chomp;
+        
+        if(/^#/){
+            @metrics_t = split /\t/, $_;
+            $flag = 1;
+        }
+        next if( $flag == 0);
+
+        my @its = split /\t/, $_;
+        foreach my $val ( 1 .. $#its ) {
+          $metrics_h{$metrics_t[ $val ]}{ $its[0] } = $its[ $val ];
+        }
+
+    }
+    close DATA;
+}
+
+sub print_alpha{
+
+    my $path = shift;
+   
+    `mkdir -p $path`;
+
+    foreach my $metric (keys %metrics_h) {
+        
+        my $fh = qq{$path/$metric.txt};
+        open (EXPORT, qq{>$fh} )   || die "$!  \n";
+        
+        print EXPORT qq{#group};
+        foreach my $sample (@samples_t) { print  EXPORT qq{\t$samples_h{ $sample }} }
+
+
+        print EXPORT qq{\n#sample};
+        foreach my $sample (@samples_t) { print  EXPORT qq{\t$sample} }
+
+        print EXPORT qq{\n$metric};
+        foreach my $sample (@samples_t) { print  EXPORT qq{\t$metrics_h{$metric}{$sample}} };
+
+        print EXPORT qq{\n};
+
+        close EXPORT;
+    }
+
+}

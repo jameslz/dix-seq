@@ -1,0 +1,257 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       =  @ARGV;
+
+my %metadata        =  ();
+profile();
+
+my $project_home    =  qq{$metadata{project_home}/$metadata{project_id}/alpha};
+
+my $runs            =  qq{$project_home/runs};
+my $diversity       =  qq{$project_home/diversity};
+my $rarefaction     =  qq{$project_home/rarefaction};
+my $octave          =  qq{$project_home/octave};
+my $report          =  qq{$project_home/report};
+
+my $datasets        =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my $distmx          =  qq{$metadata{project_home}/$metadata{project_id}/distmx/report};
+
+my $utils           =  dirname( abs_path($0) ) . '/../utils';
+my $binaries        =  dirname( abs_path($0) ) . '/../binaries';
+
+my %catalog_h       =  ();
+my @samples_t       =  ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+
+    } 
+    close PROFILE;
+
+    foreach my $t (qw/mapping_file rarefaction/) {
+
+        if(!exists $metadata{ $t }){
+            print STDERR qq{[ERR]: please specify the $t parameter in metadata file.!\n};
+            exit;
+        }
+
+    }
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\t/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[1] } = ();
+    
+    }
+    close PROFILE;
+
+}
+
+sub submit {
+    
+    make_fs();
+    mapping_file();
+    
+    alpha_run();
+    metadata_run();
+    
+    if( (scalar @samples_t) ne (scalar keys %catalog_h) ){
+       estimators_run();
+    }
+
+    rarefaction_run();
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $runs         \
+                          $rarefaction  \
+                          $report       \
+                          $diversity};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub alpha_run {
+
+     my $sh = qq{$runs/alpha.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    print EXPORT  alpha();
+    print EXPORT  shorten();
+ 
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub alpha {
+
+    my $sample  = shift;
+    my $cmd     = qq{$binaries/usearch                             \
+                        -alpha_div $datasets/zotu_table.txt        \
+                        -output $diversity/alpha.long.txt;\n};
+        $cmd     =~ s/\s+\n\s+/ /msg;
+    return  $cmd;
+
+}
+
+sub shorten {
+
+    my $list    = qq{Sample,richness,chao1,shannon_2,simpson,dominance,equitability};
+    my $cmd     = qq{$binaries/tsv-utils subcolumn -k            \
+                        $diversity/alpha.long.txt                \
+                        "$list"                                  \
+                    |$binaries/tsv-utils view -c -               \
+                    >$diversity/alpha.txt ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return  $cmd;	
+
+}
+
+sub metadata_run {
+
+    my $sh = qq{$runs/metadata.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT qq{$binaries/tsv-utils strip $metadata{mapping_file} | cut -f1,2 | grep -v '#' >$report/metadata.txt;\n};
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub estimators_run {
+
+    my $sh = qq{$runs/estimators.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT alpha_table();
+
+    foreach my $metric (qw/chao1 richness shannon_2 simpson/) {
+        print EXPORT estimators( $metric );
+        print EXPORT qq{$utils/pdf2png $diversity/alpha/$metric.pdf ;\n};
+    }
+
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+ 
+}
+
+sub alpha_table {
+
+    my $cmd = qq{$utils/usearch-utils alpha         \
+                    $report/metadata.txt            \
+                    $diversity/alpha.txt            \
+                    $diversity/alpha;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub estimators {
+
+    my $metric  = shift;
+    my $cmd     = qq{$utils/estimators.R              \
+                        $diversity/alpha/$metric.txt  \
+                        $diversity/alpha/$metric.pdf  \
+                        $metric ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return  $cmd;     
+
+}
+
+sub rarefaction_run  {
+
+    my $sh = qq{$runs/rarefaction.sh};
+
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT qq{sed 's/#//' $datasets/zotu_table.txt >$rarefaction/zotu_table.txt;\n};
+    print EXPORT rarefactions();
+    
+    foreach my $metric (qw/richness shannon  chao1 simpson/) {
+          print EXPORT  rarefactions_curve( $metric );
+          print EXPORT  qq{$utils/pdf2png $rarefaction/$metric.rarefactions_curve.pdf ;\n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub rarefactions {
+  
+    my $metric  = shift;
+    my $step_t  = step_t();
+    my $cmd     = qq{$binaries/rtk memory                        \
+                        -i  $rarefaction/zotu_table.txt          \
+                        -o  $rarefaction/rare.                   \
+                        -ns -t $metadata{cpus}                   \
+                        -d $step_t -r 50 ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return  $cmd;
+
+}
+
+sub step_t {
+
+    my @t  = split /:/, $metadata{rarefaction};
+    
+    my @step_t = ();
+    my $step = $t[0];
+    while (1) {
+    
+        if( $step <= $t[2]){
+            push @step_t, $step;
+            $step += $t[1];
+        }else{last;}   
+    
+    }
+
+    return join(",", @step_t);
+
+}
+
+sub rarefactions_curve {
+
+    my $metric  = shift;   
+    my $para    = (exists $metadata{rarefaction_text}) ? $metadata{rarefaction_text} : " -t T ";
+    my $cmd     = qq{$utils/rarefaction_curve.R                     \
+                        $para                                       \
+                        $rarefaction/rare.alpha_$metric.tsv         \
+                        $report/metadata.txt                        \
+                        $rarefaction/$metric.rarefactions_curve.pdf \
+                        $metric ;\n};
+        $cmd    =~ s/\s+\n\s+/ /msg;
+    return  $cmd;
+
+}

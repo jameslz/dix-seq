@@ -1,0 +1,118 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config)       = @ARGV;
+
+my %metadata       = ();
+profile();
+
+my  $project_home  =  qq{$metadata{project_home}/$metadata{project_id}};
+my  $summarize     =  qq{$project_home/summarize};
+my  $runs          =  qq{$summarize/runs};
+
+my  %samples_h     = ();
+my  @samples_t     = ();
+my  $utils         =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
+my  $images        =  dirname( abs_path($0) ) . '/../images';
+my  %catalog_h     =  ();
+my  $g             =  0;
+
+my  $dry_run       =  0;
+    $dry_run       =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub submit {
+
+    mapping_file();
+    rmarkdown_run();
+    utils();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    
+    while(<PROFILE>){
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    } 
+    
+    close PROFILE;
+
+}
+
+sub mapping_file {
+
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    
+    while (<PROFILE>) {
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+
+        push @samples_t, $its[-1] if(! exists $samples_h{ $its[-1] } );
+        $samples_h{ $its[-1] } = ();
+    }
+    
+    close PROFILE;
+    $g = 1 if( (scalar @samples_t) ne (scalar keys %catalog_h) );
+
+}
+
+sub rmarkdown_run {
+
+    my $sh = qq{$summarize/report.sh};
+    open (EXPORT, ">$sh") || die "$sh $!\n";
+        
+    print EXPORT rmarkdown();
+    print EXPORT mk_report();
+    
+    close EXPORT; 
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub rmarkdown  {
+
+    my $para  = "NA";
+       $para  = qq{$samples_t[0]\_$samples_t[1]} if(scalar @samples_t > 1);
+
+    my $cmd = qq{$utils/rmarkdown               \
+                       $summarize               \
+                       $images                  \
+                       $para;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub mk_report {
+    
+
+    my $cmd  = qq{$utils/render.R               \
+                $summarize/report.Rmd;\n};
+
+       $cmd  =~ s/\s+\n\s+/ /msg;
+    return $cmd ;
+
+}
+
+sub utils {
+
+    `rm -rf $summarize/report.sh`;
+
+}

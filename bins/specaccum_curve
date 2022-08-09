@@ -1,0 +1,91 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ( $config )      = @ARGV;
+
+my  %metadata       = ();
+profile();
+
+my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}};
+
+my  $specaccum      = qq{$project_home/specaccum_curve};
+my  $report         = qq{$specaccum/report};
+my  $runs           = qq{$specaccum/runs};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $datasets       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub submit {
+
+    make_fs();
+    specaccum_curves_run();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+
+    }
+    close PROFILE;
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $report  \
+                          $runs};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+}
+
+sub specaccum_curves_run {
+
+    my $sh = qq{$runs/specaccum_curve.sh};
+
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT specaccum_curve();
+    print EXPORT utils();
+    
+    close EXPORT;
+    
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub specaccum_curve {
+ 
+   my $cmd  = qq{$utils/specaccum_curve.R              \
+                   $datasets/zotu_table_norm.txt       \
+                   $report/specaccum_curve.pdf\n};
+      $cmd  =~ s/\s+\n\s+/ /msg;
+   return $cmd;
+
+}
+
+sub utils {
+
+    my  $cmd = qq{$utils/pdf2png $report/specaccum_curve.pdf ;\n};
+    return $cmd;
+
+}

@@ -1,0 +1,172 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+use Getopt::Std;
+use Switch;
+
+die "Usage:perl $0 <config>" if(@ARGV != 1);
+
+my ( $config )      = @ARGV;
+
+my  %metadata       = ();
+profiling();
+
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/DESeq2};
+
+my  $profiles       =  qq{$project_home/profiles};
+my  $runs           =  qq{$project_home/runs};
+my  $report         =  qq{$project_home/report};
+my  $analysis       =  qq{$project_home/analysis};
+my  $stats          =  qq{$project_home/stats};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $vtype          =  ();
+
+my  @samples_t      =  ();
+
+my  @ontologies_t   =  qw/phylum class order family genus/;
+my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/taxonomy/classify};
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+my  $kit            =  dirname( abs_path($0) ) . '/../thirdpart/DESeq2-kit-0.0.2/DESeq2-kit';
+my  $fdr            =  $metadata{DESeq2_qval};
+my  $fold           =  $metadata{DESeq2_foldchange};
+my  $volcano_text   =  (exists $metadata{volcano_text}) ? $metadata{volcano_text} : 'F';
+
+
+
+submit();
+exit;
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    metadata_run();
+    abund_run();
+    DESeq2_run();
+
+}
+
+sub profiling {
+
+    open( PROFILE,  $config ) || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        
+        $_ =~ s/\s+$//;
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = $_ =~ /^(\S+)\s+(.+)/;
+        next if($value eq '-');
+        $metadata{$key}  = $value;
+
+    } 
+    close PROFILE;
+
+    foreach my $it (qw/DESeq2_qval DESeq2_foldchange/){
+
+        if(!exists $metadata{$it} ){
+           print STDERR qq{[ERR]: not provide the $it information!\n};
+           exit;
+        }
+
+    }
+
+}
+
+sub mapping_file {
+
+  my %samples_h  = ();
+  open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+  while (<PROFILE>) {
+      
+        $_ =~ s/\s+$//;
+        next if (/^#/);
+        my @its = split /\t/, $_;
+
+        push @samples_t, $its[1] if(! exists $samples_h{ $its[1] } );
+        $samples_h{ $its[1] } = ();
+
+  }
+  close PROFILE;
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p  $report
+                           $runs
+                           $analysis
+                           $profiles
+                           $stats};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub metadata_run {
+    
+    my $sh = qq{$runs/metadata.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    print EXPORT qq{$binaries/tsv-utils strip  $metadata{mapping_file} |cut -f1,2 | grep -v '#' >$stats/metadata.txt;\n};
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub abund_run {
+
+    my $sh   =  qq{$runs/abund.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+    
+    foreach my $ontology ( @ontologies_t ) {
+        print EXPORT qq{cp $datasets/$ontology.counts.txt $profiles/$ontology.counts.txt;\n};
+        print EXPORT qq{cp $datasets/$ontology.freqs.txt $profiles/$ontology.freqs.txt;\n};
+    } 
+    
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v  -nlines 1 -p 1 "{}"} if(!$dry_run);
+
+}
+
+sub DESeq2_run {
+
+    my $sh   =  qq{$runs/DESeq2.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    foreach my $ontology ( @ontologies_t ) {       
+        my $fc = qq{$profiles/$ontology.counts.txt};
+        my $fn = qq{$profiles/$ontology.freqs.txt};
+        my $fo = qq{$analysis/$ontology};
+        my $fm = qq{$stats/metadata.txt};
+        print EXPORT qq{mkdir -p  $fo ;\n};
+        print EXPORT DESeq2($fc, $fn, $fm,  $fo );
+        print EXPORT qq{mv $analysis/$ontology/report $report/$ontology ;\n};
+    }
+
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+}
+
+sub DESeq2 {
+    
+    my ($fc, $fn, $fm, $fo) = @_;
+    my $para = (exists $metadata{quant_trim}) ?  $metadata{quant_trim} : 0.1;
+    my $cmd = qq{$kit                   \
+                    -t $metadata{cpus}  \
+                    -f $fold            \
+                    -q $fdr             \
+                    -r $para            \
+                    -l $volcano_text    \
+                    $fc $fn $fm $fo ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

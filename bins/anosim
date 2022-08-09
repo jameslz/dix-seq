@@ -1,0 +1,217 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my %metadata        = ();
+profile();
+
+my $project_home    = qq{$metadata{project_home}/$metadata{project_id}/anosim};
+
+my $report          = qq{$project_home/report};
+my $runs            = qq{$project_home/runs};
+my $subset          = qq{$project_home/subset};
+my $submatrix       = qq{$project_home/submatrix};
+
+my $utils           =  dirname( abs_path($0) ) . '/../utils';
+my $binaries        =  dirname( abs_path($0) ) . '/../binaries';
+my $bdiv            = qq{$metadata{project_home}/$metadata{project_id}/beta/distmx};
+
+my @samples_t       = (); 
+my @catalog_t       = ();
+my %catalog_h       = ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub submit {
+
+    make_fs();
+    mapping_file();
+    metadata_run();
+    anosim_run();
+    anosim_submatrix();
+    anosim_paired();
+    stats_run();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config ) || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+    
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}}) || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        push @catalog_t, $its[-1] if(!exists $catalog_h{ $its[-1]} );
+        $catalog_h{ $its[-1] } = ();
+    
+    }
+    close PROFILE;
+
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p $runs        \
+                          $report};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub metadata_run{
+
+    my $sh = qq{$runs/metadata.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+    print EXPORT qq{$binaries/tsv-utils strip $metadata{mapping_file} | cut -f1,2 | grep -v '#' >$report/metadata.txt;\n};
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub anosim_run {
+
+    my $sh = qq{$runs/anosim.sh};
+    
+    open( EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    foreach my $metric (qw/bray_curtis unifrac unifrac_binary jaccard/) {
+        print EXPORT anosim_fmt( $metric );
+        print EXPORT anosim( $report, $metric, $metric, "ANOSIM");
+        print EXPORT qq{$utils/pdf2png $report/$metric.pdf ;\n};
+    }
+    close EXPORT;
+
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub anosim_fmt {
+
+    my $metric = shift;
+    my $cmd    = qq{$utils/anosim-utils fmt         \
+                         $report/metadata.txt       \
+                         $bdiv/$metric.txt          \
+                    >$report/$metric.txt ;\n};
+       $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub anosim {
+    
+    my ($location, $metric, $label, $text) =  @_;
+    my $cmd = qq{$utils/anosim.R                 \
+                    $location/$metric.txt        \
+                    $location/$metric            \
+                    $label                       \
+                    $text;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub anosim_submatrix {
+
+    my $sh = qq{$runs/submetrix.sh};
+    
+    open( EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    foreach my $metric (qw/bray_curtis unifrac unifrac_binary jaccard/) {
+        print EXPORT qq{mkdir -p $subset/$metric ;\n};
+        print EXPORT qq{mkdir -p $submatrix/$metric ;\n};
+        print EXPORT subset( qq{$subset/$metric} );
+    }
+    close EXPORT;
+
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub subset {
+
+    my $metric  = shift;
+    my $cmd     = qq{$utils/anosim-utils paired      \
+                        $report/metadata.txt         \
+                        $metric ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub anosim_paired {
+
+   my $sh = qq{$runs/paired.sh};
+   open( EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    foreach my $metric (qw/bray_curtis unifrac unifrac_binary jaccard/) {
+
+        for (my $i = 0; $i < $#catalog_t; $i++) {
+            for (my $j = $i + 1; $j <= $#catalog_t; $j++) {
+                my $label = qq{$catalog_t[$i]_$catalog_t[ $j ]};
+                print EXPORT submatrix($metric, $label);
+                print EXPORT anosim( qq{$submatrix/$metric}, $label, $metric,  qq{$catalog_t[$i]_$catalog_t[ $j ]});
+                print EXPORT qq{$utils/pdf2png $submatrix/$metric/$label.pdf ;\n};              
+            }
+        }
+       
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub submatrix {
+
+    my ($metric, $label) = @_;
+    my $cmd = qq{$binaries/tsv-utils submatrix               \
+                     $report/$metric.txt                     \
+                     $subset/$metric/$label.txt              \
+                  >$submatrix/$metric/$label.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+
+}
+
+sub stats_run {
+
+    my $sh = qq{$runs/stats.sh};
+    
+    open( EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    foreach my $metric (qw/bray_curtis unifrac unifrac_binary jaccard/) {
+        print EXPORT qq{cat $submatrix/$metric/*.signif >$report/$metric.paired.signif;\n};
+    }
+    close EXPORT;
+
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}

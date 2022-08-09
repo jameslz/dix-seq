@@ -1,0 +1,219 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::Basename;
+use Cwd 'abs_path';
+
+my $version = "0.0.1";
+
+my %opts = (l =>'2',
+            r =>'0.001',
+            n => '1000000');
+
+getopts('l:n:r:', \%opts);
+
+&usage if (-t STDIN && @ARGV != 3);
+
+my  $query          =  shift @ARGV;
+my  $mapping_file   =  shift @ARGV;
+my  $project_home   =  abs_path(shift @ARGV);
+
+my  $runs           =  qq{$project_home/runs};
+my  $data           =  qq{$project_home/data};
+my  $report         =  qq{$project_home/report};
+
+my  $binaries       =  dirname( abs_path($0) ) . '/binaries';
+my  $utils          =  dirname( abs_path($0) ) . '/utils';
+
+my  $norm           =  $opts{n};
+my  $lda            =  $opts{l};
+my  $rowsum         =  $opts{r};
+
+my  @elements_t     =  ();
+
+submit();
+
+exit;
+
+sub submit{
+
+    make_fs();
+    validate_run();
+    lefse_run();
+
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p  $runs
+                           $data
+                           $report/images};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub validate_run {
+
+    my $sh    =  qq{$runs/validate.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    print EXPORT validate();
+    print EXPORT subset();
+
+
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub validate {
+
+    my $cmd  = qq{$binaries/validate               \
+                    $mapping_file $query           \
+                  1>$data/metadata.txt             \
+                  2>$data/validate.txt ;\n};
+       $cmd  =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub subset {
+
+    my $cmd =  qq{cut -f1 $data/metadata.txt       \
+                  |$binaries/tsv-utils subcolumn   \
+                    -r $query -                    \
+                  |$binaries/tsv-utils trim        \
+                    - $rowsum                      \
+                  >$data/data.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub lefse_run {
+
+    my $sh    =  qq{$runs/lefse.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    print EXPORT input();
+    print EXPORT fmt();
+    print EXPORT lefse();
+    print EXPORT plot();
+    print EXPORT circlader();
+    print EXPORT cladogram();
+    print EXPORT features();
+    print EXPORT pdf2png( qq{$report});
+    print EXPORT pdf2png( qq{$report/images} );
+    
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub input {
+
+    my $cmd    = qq{$binaries/atlas-utils lefse    \
+                       $data/metadata.txt          \
+                       $data/data.txt              \
+                    >$report/input.txt ;\n};
+       $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub fmt {
+
+    my $cmd    = qq{lefse_format_input.py          \
+                       $report/input.txt           \
+                       $report/lefse.in            \
+                       -s 1 -u 2  -o $norm ;\n};
+       $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub lefse{
+
+    my $cmd   = qq{lefse_run.py                     \
+                      -l $lda                       \
+                      $report/lefse.in              \
+                      $report/lefse.res ;\n};
+       $cmd   =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub plot {
+
+    my $cmd   = qq{lefse_plot_res.py                \
+                      --format pdf                  \
+                      --title Lefse                 \
+                      $report/lefse.res             \
+                      $report/lefse.pdf ;\n};
+       $cmd   =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub circlader {
+
+    my $cmd   = qq{lefse2circlader.py               \
+                      $report/lefse.res             \
+                      $report/circlader.txt ;\n};
+       $cmd   =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub cladogram {
+
+    my $cmd   = qq{lefse_plot_cladogram.py          \
+                      --format pdf                  \
+                      --dpi 1200                    \
+                      $report/lefse.res             \
+                      $report/circlader.pdf ;\n};
+       $cmd   =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub features {
+
+    my $cmd   = qq{lefse_plot_features.py           \
+                        --format pdf                \
+                        -f diff                     \
+                        $report/lefse.in            \
+                        $report/lefse.res           \
+                        $report/images/;\n};
+       $cmd   =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub pdf2png{
+
+    my $pdf = shift;
+    my $cmd = qq{$utils/pdf2png.sh $pdf;\n};
+    return $cmd;
+
+}
+
+sub usage {
+
+  printf STDERR qq(
+
+Program: lefse-kit: Lefse LDA test analysis.
+Version: $version
+Contact: ZHANG LEI <zhanglei\@logictek.cn>\n
+Usage:   lefse-kit <feature_table> <mapping_file> <project>\n
+Options: -l INT LDA cuttoff for visualization, default: [2.0]
+         -n INT normalization factor, default: [1000000]
+         -r FLOAT remove features rowsum cutoff, default: [0.001]
+
+);
+exit;
+
+}

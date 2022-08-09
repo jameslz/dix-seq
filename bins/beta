@@ -1,0 +1,272 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )      = @ARGV;
+
+my  %metadata      = ();
+profile();
+
+my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}};
+
+my  $beta          = qq{$project_home/beta};
+my  $upgma         = qq{$beta/upgma};
+my  $runs          = qq{$beta/runs};
+my  $distmx        = qq{$beta/distmx};
+my  $pca           = qq{$beta/pca};
+my  $pcoa          = qq{$beta/pcoa};
+my  $nmds          = qq{$beta/nmds};
+my  $report        = qq{$beta/report};
+
+my  $freq          = qq{$metadata{project_home}/$metadata{project_id}/taxonomy/bars};
+my  $dataset       = qq{$metadata{project_home}/$metadata{project_id}/phylogeny/report};
+
+my  $utils         =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
+my  $metrics       =  (-e qq{$dataset/zotus.tree}) ? "jaccard,bray_curtis,euclidean,unifrac,unifrac_binary" : 
+                                                   "jaccard,bray_curtis,euclidean";
+my  %catalog_h     =  ();
+my  @samples_t     =  ();
+
+my  $dry_run       =  0;
+    $dry_run       =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    } 
+    close PROFILE;
+
+}
+
+sub make_fs {
+
+    my $cmd       = qq{mkdir -p $distmx    \
+                                $runs      \
+                                $report    \
+                                $upgma};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub submit{
+    
+    mapping_file();
+    make_fs();
+    distmx_run();
+    upgma_run();
+    pca_run();
+    pcoa_run();
+    nmds_run();
+ 
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[1] } = ();
+    }
+    close PROFILE;
+
+}
+
+sub distmx_run {
+  
+    my $sh = qq{$runs/distmx.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT distmx();
+    print EXPORT  qq{$binaries/tsv-utils strip $metadata{mapping_file} | grep -v '#' >$report/metadata.txt;\n};
+  
+    foreach my $metric (split /,/, $metrics) {
+       print EXPORT draw_tree( $metric );
+    }
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub distmx {
+    
+    my $mx   =  (-e qq{$dataset/zotus.tree}) ? qq{-tree $dataset/zotus.tree} : " ";
+    my $cmd  = qq{$binaries/usearch                       \
+                   -beta_div $dataset/zotu_table_norm.txt \
+                   -filename_prefix $distmx/              \
+                   $mx                                    \
+                   -metrics $metrics                      \
+                   -log $distmx/beta_div.log ;\n};
+    
+        $cmd =~ s/\s+\n\s+|\s+/ /msg;
+    return $cmd, "\n";
+}
+
+sub draw_tree {
+    
+    my $metric  = shift;
+    
+    my $cmd = qq{$binaries/usearch                      \
+                   -draw_tree $distmx/$metric.tree      \
+                   -output    $distmx/$metric.tree.txt ;\n};
+
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub upgma_run {
+
+    my $sh = qq{$runs/upgma.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+     foreach my $metric (split /,/, $metrics) {
+        print EXPORT qq{mkdir -p $upgma/$metric ;\n};
+        print EXPORT distmx_fmt( $metric );
+        print EXPORT upgma( $metric );
+        print EXPORT qq{$utils/pdf2png $upgma/$metric/$metric.upgma.bar.pdf ;\n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub distmx_fmt {
+
+    my $metric = shift;
+    my $cmd = qq{$utils/distmx-fmt                  \
+                    $distmx/$metric.sorted.txt      \
+                >$upgma/$metric/$metric.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub upgma {
+
+    my $metric  = shift;
+    my $cmd     = qq{$utils/upgma.R                  \
+                        -w 12                        \
+                        $freq/phylum.10.freqs.txt    \
+                        $upgma/$metric/$metric.txt   \
+                        $report/metadata.txt         \
+                        $upgma/$metric/$metric.upgma.bar.pdf \
+                        $metric ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub pca_run {
+
+    my $sh = qq{$runs/pca.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+    print EXPORT qq{mkdir -p $pca ;\n};
+    print EXPORT pca();
+    print EXPORT qq{$utils/pdf2png $pca/zotu.pca.pdf;\n};
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub pca {
+
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $cmd     = qq{$utils/PCA.R                        \
+                        $ellipse_para                    \
+                        $text_para                       \
+                        $dataset/zotu_table_norm.txt     \
+                        $report/metadata.txt             \
+                        $pca/zotu.pca.pdf;\n};
+        $cmd =~ s/\s+\n\s+/ /msg;   
+    return $cmd;
+
+}
+
+sub pcoa_run {
+
+    my $sh = qq{$runs/pcoa.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+    foreach my $metric (split /,/, $metrics) {
+      print EXPORT qq{mkdir -p $pcoa/$metric ;\n};
+      print EXPORT pcoa( $metric );
+      print EXPORT qq{$utils/pdf2png $pcoa/$metric/$metric.pcoa.pdf ;\n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub pcoa {
+
+    my $metric       = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    
+    my $cmd = qq{$utils/PCoA.R                      \
+                    $ellipse_para                   \
+                    $text_para                      \
+                    $distmx/$metric.txt             \
+                    $report/metadata.txt            \
+                    $pcoa/$metric/$metric.pcoa.pdf;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub nmds_run {
+
+    my $sh = qq{$runs/nmds.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+    foreach my $metric (split /,/, $metrics) {
+        print EXPORT qq{mkdir -p $nmds/$metric ;\n};
+        print EXPORT nmds( $metric );
+        print EXPORT qq{$utils/pdf2png $nmds/$metric/$metric.nmds.pdf ;\n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub nmds {
+
+    my $metric       = shift;
+    my $ellipse_para = ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    = (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    
+    my $cmd = qq{$utils/NMDS.R                      \
+                    $ellipse_para                   \
+                    $text_para                      \
+                    $distmx/$metric.txt             \
+                    $report/metadata.txt            \
+                    $nmds/$metric/$metric.nmds.pdf;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;   
+    return $cmd;
+
+}

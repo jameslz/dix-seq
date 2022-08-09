@@ -1,0 +1,182 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Switch;
+
+my $usage = <<_EOUSAGE_;
+
+Usage: DESeq2-utils <command> <arguments>
+supports:
+
+    annotation <deseq>     <qvalue>  <log2foldchange>
+    regulation <deseq>     <path>
+    reshape    <abundance> <list>   <path>
+
+_EOUSAGE_
+;
+
+if( ( scalar @ARGV) < 1){
+    printf STDERR $usage;
+    exit;
+
+}
+
+my %abundance_h   = (); 
+my $cmd           = shift @ARGV; 
+
+switch($cmd){
+
+    case 'annotation'   { annotation_run(); };
+    case 'regulation'   { regulation_run(); };
+    case 'reshape'      { reshape_run(); };
+
+}
+
+exit;
+
+sub annotation_run{
+
+    if(@ARGV != 3){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($deseq, $qvalue, $log2foldchange ) = @ARGV;
+    print_tab( $deseq, $qvalue, $log2foldchange );
+
+}
+
+sub print_tab{
+    
+    my ($deseq, $qvalue, $log2foldchange)  = @_;
+    open (DATA,  $deseq)  || die "[ERR]: can't open $deseq $!\n";
+
+    my $t = <DATA>; chomp($t);
+    print $t, "\tregulation\n";
+
+    while (<DATA>) {
+        
+        chomp;
+        my @its        = split /\t/, $_; 
+        my $regulation = "";
+        my $fc         = $its[-3]; 
+
+        if( $its[-1] eq "NA" ||  abs($fc) < $log2foldchange  ||  $its[-1] > $qvalue ){
+            $regulation = "Not DE"; 
+        }else{
+            $regulation = ( $fc > 0 ) ? "Up" : "Down";
+        }
+        
+        print qq{$_\t$regulation\n};
+
+    }
+    close DATA;
+}
+
+sub regulation_run{
+
+    if(@ARGV != 2){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ( $deseq, $path ) = @ARGV;
+    regulation_list( $deseq, $path );
+
+}
+
+
+sub regulation_list {
+    
+    my ($deseq, $path)  = @_;
+    open (DATA,  $deseq)  || die "[ERR]: can't open $deseq $!\n";
+    open (EXPORT,  qq{>$path}) || die "$! \n";
+    <DATA>;
+    while (<DATA>) {
+        
+        chomp;
+        my @its        = split /\t/, $_; 
+        $its[0]        =~ s/\//_/g;
+        next if(/^#/); 
+        if( $its[-1] ne "Not DE" ){
+            print EXPORT qq{$its[0]\n};
+        }
+
+    }
+    close DATA;
+    close EXPORT;
+}
+
+
+sub reshape_run{
+
+    if(@ARGV != 3){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ( $abundance, $list, $path ) = @ARGV;
+    load_abundance( $abundance );
+    feature_table( $list, $path );
+
+}
+
+
+sub load_abundance {
+    
+    my $abundance = shift;
+    my $msize = 0;
+
+    #pass-1 get max line width
+    open (DATA,  $abundance)  || die "[ERR]: can't open $abundance $!\n";
+    while (<DATA>) {
+        
+        chomp;
+        $_ =~ s/\//_/;
+        my @t  = split /\t/, $_;
+        $msize = $#t if( $msize < $#t );
+
+    }
+    close DATA;
+
+    #pass-2 fmt
+
+    open (DATA,  $abundance)  || die "[ERR]: can't open $abundance $!\n";
+    while (<DATA>) {
+
+        chomp;
+        $_ =~ s/\//_/;
+        my  @fields = split /\t/, $_;
+        my  $size   = $#fields;
+
+        if($size < $msize){
+            foreach my $i ( ($size + 1) .. $msize) {
+                push @fields, 'NA';
+            }
+        }
+        
+        push @{$abundance_h{ $fields[0] }}, join("\t", @fields[1..$msize]);
+
+    }
+    close DATA;
+
+}
+
+sub feature_table {
+    
+    my ($list, $path)  = @_;
+    open (DATA,  $list)  || die "[ERR]: can't open $list $!\n";
+    while (<DATA>) {      
+        chomp;
+        if(exists $abundance_h{$_} ){
+        
+            open (EXPORT,  qq{>$path/$_.txt}) || die "$! \n";
+            print EXPORT   join("\n", @{$abundance_h{$_}});
+            close EXPORT;
+        
+        }
+    }
+    close DATA;
+
+}

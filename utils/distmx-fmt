@@ -1,0 +1,27 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+die "Usage:perl $0 <distmx>" if(@ARGV != 1);
+
+my ( $distmx  )         = @ARGV;
+
+distmx();
+
+exit;
+
+sub distmx {
+
+    open (DATA, $distmx)   || die "$!  \n";
+    
+    my $title = <DATA>;
+       $title =~s/^\S+//;
+    print $title;
+
+    while (<DATA>) {
+        print $_;
+    }
+    close DATA;
+  
+}

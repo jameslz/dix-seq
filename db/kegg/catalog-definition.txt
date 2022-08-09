@@ -1,0 +1,58 @@
+Global and overview maps	Metabolism
+Carbohydrate metabolism	Metabolism
+Energy metabolism	Metabolism
+Lipid metabolism	Metabolism
+Nucleotide metabolism	Metabolism
+Amino acid metabolism	Metabolism
+Metabolism of other amino acids	Metabolism
+Glycan biosynthesis and metabolism	Metabolism
+Metabolism of cofactors and vitamins	Metabolism
+Metabolism of terpenoids and polyketides	Metabolism
+Biosynthesis of other secondary metabolites	Metabolism
+Xenobiotics biodegradation and metabolism	Metabolism
+Chemical structure transformation maps	Metabolism
+Transcription	Genetic Information Processing
+Translation	Genetic Information Processing
+Folding, sorting and degradation	Genetic Information Processing
+Replication and repair	Genetic Information Processing
+Membrane transport	Environmental Information Processing
+Signal transduction	Environmental Information Processing
+Signaling molecules and interaction	Environmental Information Processing
+Transport and catabolism	Cellular Processes
+Cell growth and death	Cellular Processes
+Cellular community - eukaryotes	Cellular Processes
+Cellular community - prokaryotes	Cellular Processes
+Cell motility	Cellular Processes
+Immune system	Organismal Systems
+Endocrine system	Organismal Systems
+Circulatory system	Organismal Systems
+Digestive system	Organismal Systems
+Excretory system	Organismal Systems
+Nervous system	Organismal Systems
+Sensory system	Organismal Systems
+Development and regeneration	Organismal Systems
+Aging	Organismal Systems
+Environmental adaptation	Organismal Systems
+Cancer: overview	Human Diseases
+Cancer: specific types	Human Diseases
+Immune disease	Human Diseases
+Neurodegenerative disease	Human Diseases
+Substance dependence	Human Diseases
+Cardiovascular disease	Human Diseases
+Endocrine and metabolic disease	Human Diseases
+Infectious disease: bacterial	Human Diseases
+Infectious disease: viral	Human Diseases
+Infectious disease: parasitic	Human Diseases
+Drug resistance: antimicrobial	Human Diseases
+Drug resistance: antineoplastic	Human Diseases
+Chronology: Antiinfectives	Drug Development
+Chronology: Antineoplastics	Drug Development
+Chronology: Nervous system agents	Drug Development
+Chronology: Other drugs	Drug Development
+Target-based classification: G protein-coupled receptors	Drug Development
+Target-based classification: Nuclear receptors	Drug Development
+Target-based classification: Ion channels	Drug Development
+Target-based classification: Transporters	Drug Development
+Target-based classification: Enzymes	Drug Development
+Structure-based classification	Drug Development
+Skeleton-based classification	Drug Development

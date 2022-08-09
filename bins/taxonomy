@@ -1,0 +1,324 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my %metadata        = ();
+profile();
+
+my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/taxonomy};
+
+my  $classify       = qq{$project_home/classify};
+my  $krona          = qq{$project_home/krona};
+my  $runs           = qq{$project_home/runs};
+my  $bars           = qq{$project_home/bars};
+my  $heatmap        = qq{$project_home/heatmap};
+
+my  $datasets       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+
+my  @taxon_t        = qw/phylum order class family genus/;
+my  %taxon_h        = qw/phylum p order o class c family f  genus g/;
+my  $rank_pattern   = (exists $metadata{ rank_pattern })  ?  $metadata{ rank_pattern } : "phylum 10 class 10 order 10 family 10 genus 10  zotus 10"; 
+my  %rank_h         = split /\s+/, $rank_pattern;
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $db             =  dirname( abs_path($0) ) . '/../db';
+
+my  @samples_t      =  ();
+my  %catalog_h      =  (); 
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+
+    } 
+    close PROFILE;
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[-1] } = ();
+    
+    }
+    close PROFILE;
+
+}
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    classify_run();
+    krona_run();
+    bars_run();
+    heatmap_run();
+    
+    if( (scalar @samples_t) ne (scalar keys %catalog_h) ){
+       stats_run();
+    }
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $krona        \
+                          $classify     \
+                          $bars         \
+                          $heatmap      \
+                          $runs};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+}
+
+sub classify_run {
+
+    my $sh = qq{$runs/classify.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    foreach my $level ( @taxon_t ) {
+        print EXPORT level ( $level );
+        print EXPORT counts2freqs ( $level );
+        print EXPORT lineage ( $level );
+    }
+
+    print EXPORT qq{cp $datasets/zotu_table.txt $classify/zotu.counts.txt ;\n};
+    print EXPORT qq{cp $datasets/zotu_table_freqs.txt $classify/zotu.freqs.txt ;\n};
+
+    print EXPORT tsv2xlsx();
+        
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub level {
+
+    my $level   =  shift;
+    my $cmd     =  qq{$binaries/atlas-utils level           \
+                        -l $taxon_h{$level}                 \
+                        $datasets/zotu_table_ann.txt        \
+                    |$binaries/tsv-utils view -r -          \
+                    >$classify/$level.counts.txt ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub counts2freqs {
+
+    my $level   = shift;
+    my $cmd     = qq{$binaries/atlas-utils  counts2freqs    \
+                        $classify/$level.counts.txt         \
+                        >$classify/$level.freqs.txt; \n};
+        $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub lineage {
+
+    my $level  = shift;
+    my $cmd    = qq{$binaries/atlas-utils patch               \
+                        $classify/$level.freqs.txt            \
+                        $taxon_h{$level}                      \
+                  |$binaries/tsv-utils definition             \
+                        -t levels $db/$metadata{db}.levels -  \
+                  |sed  's/[cgdkocfs]://'                     \
+                  >$classify/$level.levels.txt; \n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+   return $cmd;
+
+}
+
+sub tsv2xlsx {
+
+    my @t = ();
+    foreach my $level ( @taxon_t ) {
+        push @t, qq{$level.counts:$classify/$level.counts.txt $level.freqs:$classify/$level.freqs.txt};
+    }
+    return  qq{$binaries/tsv-utils tsv2xlsx $classify/taxonomy.xlsx }. join(" ", @t) . qq{  ;\n}; 
+
+}
+
+sub krona_run {
+
+    my $sh = qq{$runs/krona.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    foreach my $sample ( @samples_t ) {
+        print EXPORT krona( $sample );
+    }
+
+    print EXPORT ktImportText();
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub krona {
+
+    my $sample  = shift;
+    my $cmd     = qq{$binaries/atlas-utils krona          \
+                       $datasets/zotu_table_freqs_ann.txt \
+                       $sample                            \
+                    >$krona/$sample.txt ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub ktImportText {
+
+    my $samples = krona_table();
+    my $cmd = qq{ktImportText -o $krona/krona.html $samples ;\n};
+    return $cmd;
+
+}
+
+sub krona_table {
+
+    my @t = ();
+    foreach my $sample ( @samples_t ) {
+        push @t, qq{$krona/$sample.txt};
+    }   
+    return join(" ", @t);
+
+}
+
+sub bars_run {
+
+    my $sh = qq{$runs/bars.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    foreach my $level ( @taxon_t ) {
+        print EXPORT rank( $level );
+        print EXPORT barplot( $level );
+        print EXPORT qq{$utils/pdf2png $bars/$level.$rank_h{$level}.stack.pdf \n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub rank {
+
+    my $level   = shift;
+    my $cmd     = qq{$binaries/atlas-utils rank            \
+                        -r $rank_h{$level}  -m  -a         \
+                        $classify/$level.freqs.txt         \
+                    >$bars/$level.$rank_h{$level}.freqs.txt ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub barplot {
+
+    my $level   = shift;
+    my $cmd     = qq{$utils/barplot.R                             \
+                        $bars/$level.$rank_h{$level}.freqs.txt    \
+                        $bars/$level.$rank_h{$level}.stack.pdf    \
+                        $level ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub heatmap_run {
+
+    my $sh = qq{$runs/heatmap.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT metadata();
+    
+    foreach my $level ( @taxon_t ) {
+        print EXPORT heatmap( $level );
+        print EXPORT qq{$utils/pdf2png $heatmap/$level.$rank_h{$level}.heatmap.pdf \n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub heatmap {
+
+    my $level   = shift;
+    my $cmd     = qq{$utils/heatmap.R                                \
+                        $bars/$level.$rank_h{$level}.freqs.txt       \
+                        $heatmap/$level.$rank_h{$level}.heatmap.pdf  \
+                        $level ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub stats_run {
+
+    my $sh = qq{$runs/stats.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT metadata();
+    foreach my $level ( @taxon_t ) {
+        print EXPORT stats( $level );
+        print EXPORT qq{$utils/pdf2png $bars/$level.$rank_h{$level}.average.pdf \n};
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub metadata {
+
+    my $cmd = qq{$binaries/tsv-utils strip         \
+                     $metadata{mapping_file}       \
+                | cut -f1,2                        \
+                |grep -v  "#"                      \
+                >$bars/metadata.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub stats {
+
+    my $level   = shift;
+    my $cmd     = qq{$utils/stats.R                                \
+                        $bars/$level.$rank_h{$level}.freqs.txt     \
+                        $bars/metadata.txt                         \
+                        $bars/$level.$rank_h{$level}.average.pdf   \
+                        $level ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+

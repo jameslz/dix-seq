@@ -1,0 +1,60 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+
+die "Usage:perl $0 <mapping_file> <level> <data>" if(@ARGV != 3);
+
+my ($mapping_file, $level, $data) = @ARGV;
+
+my @group_t = ();
+
+mapping_file();
+print_lines();
+exit;
+
+sub print_lines{
+   
+    print qq{#level\ttaxonomy\tgroup_A\tgroup_B\tmean(A)\tvariance(A)\tstandard_error(A)\tmean(B)\tvariance(B)\tstandard_error(B)\tp_value\tq_value\n};
+    stats_agg();
+}
+
+sub mapping_file {
+  
+  my %filter = ();
+  open( DATA,  $mapping_file )  || die "$!\n";
+  while (<DATA>) {
+      chomp;
+      next if(/^#/);
+      my @its = split /\t/, $_;
+      push @group_t, $its[1] if(! exists $filter{$its[1]});
+      $filter{$its[1]}   = ();
+  }
+  close DATA;
+}
+
+sub stats_agg{
+    
+    foreach my $case (0 .. $#group_t - 1) {
+      foreach my $control ($case + 1 .. $#group_t){
+          my $stats = qq{$data/$group_t[$case]\_$group_t[$control].$level.txt};
+          print_stats($stats, $group_t[$case], $group_t[$control]);
+      }
+    }
+
+}
+
+sub print_stats{
+   
+   my ($stats, $case, $control) = @_;
+   open( DATA,  $stats)  || die "$!\n";
+   while (<DATA>) {
+      next if(/^\s+/ || /^#/);
+      my @its = split /\t/, $_;
+      my $feature = shift @its;
+      print qq{$level\t$feature\t$case\t$control\t}, join("\t", @its);
+
+   }
+   close DATA;
+
+}

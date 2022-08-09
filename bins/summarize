@@ -1,0 +1,224 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config)        = @ARGV;
+my %metadata        = ();
+profile();
+
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}};
+my  $summarize      =  qq{$project_home/summarize};
+my  $runs           =  qq{$summarize/runs};
+
+my  @samples_t      =  ();
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  %catalog_h      =  ();
+my  $g              =  0;
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    clean_data();
+    zotu();
+    alpha();
+    beta();
+    
+    picrust2() if(-e qq{$project_home/picrust2});
+    
+    statistics()if($g);
+    utils();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+       
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[1] } = ();
+    
+    }
+    close PROFILE;
+
+    $g = 1 if( (scalar @samples_t) ne (scalar keys %catalog_h) );
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p  $runs
+                       $summarize/1.clean_data/reads
+                       $summarize/2.zotu
+                       $summarize/3.alpha
+                       $summarize/4.beta};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub clean_data {
+
+    my $sh = qq{$runs/clean_data.sh};
+    
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    foreach my $sample (@samples_t) {
+        print EXPORT qq{gzip -c $project_home/primer_strip/reads/$sample.fastq >$summarize/1.clean_data/reads/$sample.fastq.gz ;\n};
+        print EXPORT qq{$binaries/fastx-utils convert $project_home/primer_strip/reads/$sample.fastq |gzip >$summarize/1.clean_data/reads/$sample.fasta.gz ;\n};
+    }
+    print EXPORT qq{cp -r $project_home/classify/report/{sample.stats.short.txt,sample.stats.long.txt} $summarize/1.clean_data ;\n};
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p $metadata{cpus} "{}"} if(!$dry_run);
+
+}
+
+sub zotu {
+
+    my $sh = qq{$runs/zotu.sh};
+    
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    print EXPORT qq{mkdir -p  $summarize/2.zotu \n};
+ 
+    print EXPORT qq{cp -r $project_home/classify/zotus $summarize/2.zotu ;\n};
+    print EXPORT qq{cp $project_home/phylogeny/report/zotus.tree $summarize/3.alpha/zotus.tree ;\n};
+    print EXPORT qq{cp -r $project_home/taxonomy/{krona,bars,heatmap,classify} $summarize/2.zotu ;\n};    
+
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+
+}
+
+sub alpha {
+
+    my $sh = qq{$runs/alpha.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT qq{cp -r $project_home/alpha/{rarefaction,diversity} $summarize/3.alpha ;\n};
+    print EXPORT qq{cp $project_home/rank_abundance/report/*  $summarize/3.alpha ;\n};
+    print EXPORT qq{cp $project_home/specaccum_curve/report/* $summarize/3.alpha ;\n};
+    print EXPORT qq{cp $project_home/core/report/core.txt     $summarize/3.alpha ;\n} if(-e qq{$project_home/core/report/core.txt});
+
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+
+}
+
+sub beta {
+
+    my $sh = qq{$runs/beta.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT qq{cp -r $project_home/beta/{distmx,pca,pcoa,nmds,upgma}  $summarize/4.beta ;\n};
+    
+    if( $g ){
+        print EXPORT qq{cp -r $project_home/anosim/report     $summarize/4.beta/anosim ;\n};
+        print EXPORT qq{cp -r $project_home/anosim/submatrix  $summarize/4.beta/anosim ;\n};
+
+    }
+
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+
+}
+
+sub picrust2 {
+
+    my $sh = qq{$runs/picrust2.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT qq{mkdir -p $summarize/5.picrust;\n};
+    print EXPORT qq{cp -r $project_home/picrust2/prediction  $summarize/5.picrust ;\n};
+    print EXPORT qq{cp -r $project_home/picrust2/report/picrust2.metagenome.xlsx  $summarize/5.picrust ;\n};
+   
+    if($g){
+        print EXPORT qq{cp -r $project_home/kegg/annotation $summarize/5.picrust ;\n};
+        print EXPORT qq{cp $project_home/kegg/report/pathway-levels.txt $summarize/5.picrust;\n};
+        print EXPORT qq{cp $project_home/kegg/report/picrust2.kegg.xlsx $summarize/5.picrust;\n};
+    }
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+}
+
+sub statistics {
+
+    my $sh = qq{$runs/statistics.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    if(-e qq{$project_home/DESeq2}){
+
+        print EXPORT qq{mkdir -p $summarize/6.statistics/DESeq2 ;\n};
+        print EXPORT qq{cp -r $project_home/DESeq2/report/*  $summarize/6.statistics/DESeq2/ ;\n};
+    
+    }
+
+    if(-e qq{$project_home/lefse}){
+
+        print EXPORT qq{mkdir -p $summarize/6.statistics/lefse ;\n};
+        print EXPORT qq{cp -r $project_home/lefse/report/*  $summarize/6.statistics/lefse/ ;\n};
+    
+    }
+
+
+    if(-e qq{$project_home/kruskal_wallis}){
+
+        print EXPORT qq{mkdir -p $summarize/6.statistics/kruskal_wallis ;\n};
+        foreach my $db (qw/taxonomy picrust2 kegg/) {
+            next if(! -e qq{$project_home/kruskal_wallis/$db});
+            print EXPORT qq{mkdir -p $summarize/6.statistics/kruskal_wallis/$db ;\n};
+            print EXPORT qq{cp -r $project_home/kruskal_wallis/$db/report/*  $summarize/6.statistics/kruskal_wallis/$db/ ;\n};
+        }    
+    
+    }
+
+    if(-e qq{$project_home/wilcox_rank_sum}){
+
+        print EXPORT qq{mkdir -p $summarize/6.statistics/wilcox_rank_sum ;\n};
+        foreach my $db (qw/taxonomy picrust2 kegg/) {
+            next if(! -e qq{$project_home/wilcox_rank_sum/$db});
+            print EXPORT qq{mkdir -p $summarize/6.statistics/wilcox_rank_sum/$db ;\n};
+            print EXPORT qq{cp -r $project_home/wilcox_rank_sum/$db/report/*  $summarize/6.statistics/wilcox_rank_sum/$db/ ;\n};
+        }    
+    
+    }
+
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+}
+
+sub utils {
+
+    `rm -rf $summarize/runs`;
+
+}

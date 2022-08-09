@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+if [ $# -eq 1 ]; then
+    path=$1
+else
+    echo pdf2png path;exit
+fi
+
+basename=$(basename $path  .pdf)
+dirname=$(dirname $path)
+
+convert  -antialias  -quality 100  -compress lzw  -density 200  $dirname/$basename.pdf $dirname/$basename.png

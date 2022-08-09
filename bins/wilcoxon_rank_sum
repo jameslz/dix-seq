@@ -1,0 +1,209 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+use Getopt::Std;
+use Switch;
+
+my %opts = (d=>'taxonomy');
+getopts('d:', \%opts);
+
+die "Usage:perl $0 <config>" if(@ARGV != 1);
+
+my ( $config )      = @ARGV;
+
+my  %metadata       = ();
+profiling();
+
+my  $db             =  $opts{d};
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}};
+
+my  $wilcox_rank_sum =  qq{$project_home/wilcox_rank_sum/$db};
+my  $profiles       =  qq{$wilcox_rank_sum/profiles};
+my  $runs           =  qq{$wilcox_rank_sum/runs};
+my  $report         =  qq{$wilcox_rank_sum/report};
+my  $analysis       =  qq{$wilcox_rank_sum/analysis};
+my  $stats          =  qq{$wilcox_rank_sum/stats};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $vtype          =  ();
+
+my  @samples_t      =  ();
+
+my  @ontologies_t   =  ();
+my  $datasets       =  ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+my  $kit            =  dirname( abs_path($0) ) . '/../thirdpart/wrst-kit-0.0.2/wrst-kit';
+my  $wilcoxon_qval  = $metadata{wilcoxon_qval};
+
+submit();
+exit;
+
+sub submit {
+
+    mapping_file();
+    set_para();
+    make_fs();
+    metadata_run();
+    abund_run();
+    wilcox_rank_sum_run();
+
+
+}
+
+sub set_para {
+
+    my  $fp    = qq{$metadata{project_home}/$metadata{project_id}};
+
+    switch($db){   
+      case 'taxonomy'     { $datasets   =  qq{$project_home/taxonomy/classify}}
+      case 'kegg'         { $datasets   =  qq{$project_home/kegg/annotation} }
+      case 'picrust2'     { $datasets   =  qq{$project_home/picrust2/prediction} }
+    }
+
+    switch($db){   
+      case 'taxonomy'     { @ontologies_t   =  qw/phylum class order family genus/;}
+      case 'kegg'         { @ontologies_t   =  qw/module pathway catalog/;}
+      case 'picrust2'     { @ontologies_t   =  qw/ko enzyme/;}
+    }
+
+}
+
+sub profiling {
+
+    open( PROFILE,  $config ) || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        
+        $_ =~ s/\s+$//;
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = $_ =~ /^(\S+)\s+(.+)/;
+        next if($value eq '-');
+        $metadata{$key}  = $value;
+
+    } 
+    close PROFILE;
+
+    foreach my $it (qw/wilcoxon_pval wilcoxon_qval/){
+
+        if(!exists $metadata{$it} ){
+           print STDERR qq{[ERR]: not provide the $it information!\n};
+           exit;
+        }
+
+    }
+
+}
+
+sub mapping_file {
+
+  my %samples_h  = ();
+  open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+  while (<PROFILE>) {
+      
+        $_ =~ s/\s+$//;
+        next if (/^#/);
+        my @its = split /\t/, $_;
+
+        push @samples_t, $its[1] if(! exists $samples_h{ $its[1] } );
+        $samples_h{ $its[1] } = ();
+
+  }
+  close PROFILE;
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p  $report
+                           $runs
+                           $analysis
+                           $profiles
+                           $stats};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub metadata_run {
+    
+    my $sh = qq{$runs/metadata.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    print EXPORT qq{$binaries/tsv-utils strip  $metadata{mapping_file} |cut -f1,2 | grep -v '#' >$stats/metadata.txt;\n};
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub abund_run {
+
+    my $sh   =  qq{$runs/abund.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+    
+    foreach my $ontology ( @ontologies_t ) {
+        if($db eq "taxonomy"){
+             print EXPORT qq{cp $datasets/$ontology.freqs.txt $profiles/$ontology.txt;\n};
+        }elsif($db eq "kegg"){
+             print EXPORT qq{cp $datasets/$ontology.txt $profiles/$ontology.txt;\n};
+        }else{
+             print EXPORT fmt( $ontology );
+        }
+
+    } 
+    
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v  -nlines 1 -p 1 "{}"} if(!$dry_run);
+
+}
+
+sub fmt{
+
+    my $ontology= shift;
+    my $cmd     = qq{$binaries/tsv-utils view -c    \
+                       $datasets/$ontology.txt      \
+                    >$profiles/$ontology.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub wilcox_rank_sum_run {
+
+    my $sh   =  qq{$runs/wilcoxon.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    foreach my $ontology ( @ontologies_t ) {       
+        my $fn = qq{$profiles/$ontology.txt};
+        my $fo = qq{$analysis/$ontology};
+        my $fm = qq{$stats/metadata.txt};
+        print EXPORT qq{mkdir -p  $fo ;\n};
+        print EXPORT wilcox_rank_sum( $fn, $fm,  $fo );
+        print EXPORT qq{mv $analysis/$ontology/report $report/$ontology ;\n};
+    }
+
+    close EXPORT;
+    system  qq{cat $sh | $binaries/gargs -v -nlines 1 -p 1 "{}"} if(!$dry_run);
+}
+
+sub wilcox_rank_sum {
+    
+    my ($fn, $fm, $fo) = @_;
+    my $para = (exists $metadata{quant_trim}) ?  $metadata{quant_trim} : 0.0001;
+    my $pval = (exists $metadata{wilcoxon_pval} && $metadata{wilcoxon_pval}  eq 'T') ?  ' -p ' :  " ";
+    my $cmd = qq{$kit                   \
+                    -t $metadata{cpus}  \
+                    -q $wilcoxon_qval   \
+                    -r $para            \
+                    $pval               \
+                    $fn $fm $fo ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

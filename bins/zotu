@@ -1,0 +1,272 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage: zotu <metadata>" if(@ARGV != 1);
+
+my ($config )      = @ARGV;
+
+my %metadata       = ();
+profile();
+
+my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}/zotu};
+
+my  $reads         = qq{$project_home/reads};
+my  $unoise        = qq{$project_home/unoise};
+my  $runs          = qq{$project_home/runs};
+my  $report        = qq{$project_home/report};
+
+my  $datasets      = qq{$metadata{project_home}/$metadata{project_id}/primer_strip/reads};
+
+my  $utils         =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
+my  $db            =  dirname( abs_path($0) ) . '/../db';
+
+my  @samples_t     = ();
+
+my  $dry_run       =  0;
+    $dry_run       =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    } 
+    close PROFILE;
+
+    foreach my $db (qw/mapping_file db unoise3_param/) {
+        if(! exists $metadata{$db}){
+            print STDERR "[ERR]: please specify the $db metadata.\n";
+            exit;
+        }
+    }
+
+}
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    labels_run();
+    derep_run();
+    unoise_run();
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+    }
+    close PROFILE;
+  
+}
+
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $reads    \
+                          $runs     \
+                          $unoise   \
+                          $report};
+    $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub labels_run {
+    
+    my $sh = qq{$runs/labels.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT qq{rm $reads/striped.fastq\n} if(-e qq{$reads/striped.fastq});
+    foreach my $sample ( @samples_t ) {
+        print EXPORT labels( $sample );
+    }
+    close EXPORT;
+    
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+}
+
+sub labels {
+  
+    my $sample  = shift;
+    my $cmd     = qq{$binaries/fastx-utils rename         \
+                         $datasets/$sample.fastq          \
+                         $sample                          \
+                      |$binaries/fastx-utils label        \
+                         -  ";sample=$sample;"            \
+                      >> $reads/striped.fastq ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+}
+
+sub derep_run {
+    
+    my $sh = qq{$runs/derep.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+
+    print EXPORT fastx_filter();
+    print EXPORT fastx_uniques();
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub fastx_filter {
+
+    my $cmd = qq{$binaries/usearch                       \
+                     -fastq_filter $reads/striped.fastq  \
+                     -relabel Filt                       \
+                     -fastq_maxee 1.0                    \
+                     -fastaout  $reads/filtered.fasta    \
+                     -threads $metadata{cpus}            \
+                     -log $reads/filtered.log; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub fastx_uniques {
+
+    my $cmd = qq{$binaries/usearch                       \
+                   -fastx_uniques $reads/filtered.fasta  \
+                   -relabel Uniq                         \
+                   -sizeout                              \
+                   -fastaout $reads/derep.fasta          \
+                   -threads $metadata{cpus}              \
+                   -uc $reads/derep.uc                   \
+                   -log $reads/derep.log; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+}
+
+sub unoise_run {
+
+    my $sh = qq{$runs/unoise.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT unoise();
+    print EXPORT align();
+    print EXPORT convert();
+    print EXPORT otutab();
+    print EXPORT reorder();
+    print EXPORT counts2freqs();
+    print EXPORT otutab_stats();
+    
+    close EXPORT;
+    
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub unoise {
+
+    my $cmd = qq{$binaries/usearch                      \
+                    -unoise3 $reads/derep.fasta         \
+                    $metadata{unoise3_param}            \
+                    -zotus $unoise/denoise.fasta        \
+                    -tabbedout $unoise/unoise.txt       \
+                    -log $unoise/unoise.log; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+
+sub align {
+
+    my $cmd = qq{$binaries/usearch                        \
+                    -usearch_global $unoise/denoise.fasta \
+                    -db $db/$metadata{db}.udb             \
+                    -id 0.4                               \
+                    -maxhits 1                            \
+                    -blast6out $unoise/align.txt          \
+                    -strand both                          \
+                    -log $unoise/align.log; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub convert {
+
+    my $cmd = qq{$binaries/tsv-utils cut -f1             \
+                        $unoise/align.txt                \
+                    |$binaries/fastx-utils subseq        \
+                        $unoise/denoise.fasta            \
+                        -                                \
+                    |$binaries/fastx-utils rename        \
+                        -                                \
+                        ZOTU                             \
+                    >$report/zotus.fasta ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;  
+
+}
+
+sub otutab {
+
+    my $cmd = qq{$binaries/usearch                      \
+                   -otutab  $reads/striped.fastq        \
+                   -zotus $report/zotus.fasta           \
+                   -strand plus                         \
+                   -id 0.97                             \
+                   -otutabout $unoise/zotu_table.txt    \
+                   -biomout $unoise/zotu_table.json     \
+                   -mapout $unoise/map.txt              \
+                   -threads $metadata{cpus}; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub reorder {
+
+    my $cmd = qq{$binaries/fastx-utils view             \
+                   $report/zotus.fasta                  \
+                 |$binaries/tsv-utils reorder           \
+                   $unoise/zotu_table.txt -             \
+                 >$report/zotu_table.txt ; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+}
+
+sub counts2freqs {
+
+    my $cmd = qq{$binaries/usearch                      \
+                    -otutab_counts2freqs                \
+                        $report/zotu_table.txt          \
+                    -output                             \
+                        $report/zotu_table_freqs.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+}
+
+sub otutab_stats {
+
+    my $cmd = qq{$binaries/usearch                     \
+                    -otutab_stats                      \
+                        $report/zotu_table.txt         \
+                    -output                            \
+                        $report/zotu_report.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

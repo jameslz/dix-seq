@@ -1,0 +1,166 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config)        = @ARGV;
+
+my  %metadata       = ();
+profiling();
+
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/mergepairs};
+
+my  $runs           =  qq{$project_home/runs};
+my  $report         =  qq{$project_home/report};
+my  $reads          =  qq{$project_home/reads};
+
+my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/trimming/reads};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+
+my  @samples_t      =  ();
+my  $qual           =  (exists $metadata{qual}) ? $metadata{qual} : 33;
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    mergepairs_run();
+    mergepairs_report();
+
+}
+
+sub profiling {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        
+        $_ =~ s/\s+$//;
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = $_ =~ /^(\S+)\s+(.+)/;
+        next if($value eq '-');
+        $metadata{$key}  = $value;
+    
+    } 
+    close PROFILE;
+
+    if(!exists $metadata{mapping_file}){
+       
+        print STDERR qq{[ERR]: please specify the mapping_file data.!\n};
+        exit;
+    
+    }
+    
+    if(!exists $metadata{mergepairs_param}){
+        print STDERR qq{[ERR]: please specify the mergepairs parameter!!\n};
+        exit;
+    }
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+    
+    }
+    close PROFILE;
+  
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p $report
+                          $runs
+                          $reads};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+}
+
+sub mergepairs_run {
+
+    my $sh = qq{$runs/mergepairs.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    foreach my $sample ( @samples_t ) {
+        
+        print EXPORT  mergepairs( $sample );
+        print EXPORT  fqchk( $sample );
+    
+    }
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 2 -p $metadata{cpus} "{}"\n} if(!$dry_run);
+
+}
+
+sub mergepairs {
+
+    my $sample   = shift;
+    my $cmd = qq{$binaries/usearch                                          \
+                       -fastq_mergepairs $datasets/$sample\_1.fastq         \
+                       -reverse $datasets/$sample\_2.fastq                  \
+                       -fastqout $reads/$sample.fastq                       \
+                       -fastqout_notmerged_fwd  $reads/$sample.notmerged_fwd.fastq  \
+                       -fastqout_notmerged_rev  $reads/$sample.notmerged_rev.fastq  \
+                       -log  $reads/$sample.log                             \
+                       -report $reads/$sample.report                        \
+                       -threads 1                                           \
+                       $metadata{mergepairs_param} ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+   return $cmd;
+
+}
+
+sub fqchk {
+
+    my $sample  = shift;
+    my $cmd     = qq{cat $reads/$sample.fastq           \
+                    |$binaries/atlas-utils fqchk        \
+                        -q $qual                        \
+                        -l $sample                      \
+                        -                               \
+                     >$reads/$sample.txt ;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub mergepairs_report {
+
+    my $sh = qq{$runs/report.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT qq{cat $reads/*.txt | $binaries/tsv-utils view -d - >$report/sequencing.stats.txt;\n};
+    print EXPORT merge_stats();    
+    close EXPORT;      
+   
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub merge_stats {
+    
+    my $cmd = qq{$utils/usearch-utils mergepairs             \
+                     $metadata{mapping_file}                 \
+                     $reads                                  \
+                 >$report/mergepairs.stats.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

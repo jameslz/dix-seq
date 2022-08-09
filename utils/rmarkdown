@@ -1,0 +1,677 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+import argparse
+from pathlib import Path
+import os
+import time
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(
+        description='Usage: rmarkdown  summarize_path  iamges_path group\n',
+        prog="dix-seq")
+    parser.add_argument(
+        "summarize_path",
+        help="summarize_path")
+    parser.add_argument(
+        "iamges_path",
+        help="iamges_path")
+    parser.add_argument(
+        "group",
+        help="group compare",
+        default=None,)
+    return parser.parse_args()
+
+
+def if_exist(file_path):
+    if Path(file_path).is_file():
+        return file_path
+    else:
+        return iamges + '/blank.jpg'
+
+
+def write_data(path, iamges, group):
+    clean_data = path + '/1.clean_data'
+    zotu = path + '/2.zotu'
+    alpha = path + '/3.alpha'
+    beta = path + '/4.beta'
+    picrust = path + '/5.picrust'
+    tax4fun = path + '/5.tax4fun'
+    statistics = path + '/6.statistics'
+    report = path + '/report.Rmd'
+    localtime = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()).split(' ')[0]
+
+    if Path(report).is_file():
+        os.remove(path + '/report.Rmd')
+
+    process1 = iamges + '/image001.png'
+    process1 = if_exist(process1)
+    process2 = iamges + '/image002.png'
+    process2 = if_exist(process2)
+
+    introduction = '''
+---
+title: "扩增子数据标准分析"
+author: "dix-seq 0.0.6 工作流"
+CJKmainfont:  Song
+output:
+  html_document:
+    wordkeep_tex: yes  
+    latex_engine: xelatex
+---
+
+<br/>
+<br/>
+<br/>
+<br/>
+
+
+**扩增子数据标准分析**<br>
+**逻捷科技(上海)有限公司**<br>
+**{time}**
+
+
+<br/>
+<br/>
+<br/>
+<br/>
+
+
+### **一 概述**
+<br/>
+<br/>
+微生物世界是分子多样性最大的天然资源库，基于菌株水平的传统分离培养技术为人们认识微生物多样性提供了可能，但是据估计自然界中超过99% 的微生物不能通过传统的分离培养技术获得其纯培养，从而导致环境微生物中的多样性基因资源难以被发现。许多重要的微生物我们还不能识别，随着微生物活性产物的广泛研究和深入开发利用，从环境微生物中筛选到新活性物质的几率将逐步下降。而如何开拓利用环境微生物新资源是微生物研究的重要课题。为此研究者们开发了多种以特定环境微生物为研究对象的高通量测序方法。
+
+**16S rDNA** 是细菌分类学研究中最常用的 “分子钟”, 其序列包括9个可变区和10个保守区。通过提取环境样品的DNA，并扩增**16S rDNA**某个可变区，采用高通量测序仪**MiSeq**或**NovaSeq**对其进行测序，可以获得特定环境中细菌或古菌物种组成、物种丰度、系统进化、群落比较等诸多信息。
+
+<br/>
+
+### **二 项目流程**
+<br/>
+
+#### **1 信息分析流程**
+<br/>
+<br/>
+
+为了保证特征序列表（**ZOTU**表，**Zero-radius Operational Taxonomic Units**）构建及后续分析的准确性， 首先会对原始数据（**Raw reads**）进行过滤处理， 处理后的数据进行拼接、过滤，得到有效数据（**Effective Tags**）。然后基于有效数据进行序列去噪和物种分类分析，形成**ZOTU**序列和其他物种分类等级的物种丰度谱。基于数据均一化后的**ZOTU**物种丰度谱，再对ZOTU进行丰度、多样性指数等分析，同时对物种注释在各个分类水平上进行群落结构的统计分析。还可以在以上分析的基础上，进行一系列的基于**ZOTU**特征序列、物种组成统计比较分析（如**PCoA、PCA、NMDS**以及**DESeq2**），挖掘样品之间的物种组成差异，甚至由物种结构来进行功能预测分析，最后探究环境及临床因子与样品菌群结构和功能之间的关联，根据**ZOTU**特征序列及其丰度信息进行**KEGG**功能预测。
+<br/>
+<br/>
+
+<center>![图2-1 生物信息数据处理流程图]({process2}){{width=70%}}</center>
+<br/>
+<br/>
+
+<center>**图2-1 生物信息数据处理流程图**</center>
+<br/>
+<br/>
+
+扩增子测序数据分析的核心步骤：
+<br/>
+
+（1）  序列拆分，根据**barcode**序列拆分出每个样本的原始数据，并且去除**barcode**序列；<br>
+（2）  根据序列间交叠合并双端序列，并识别和切除引物序列（去除不匹配的引物序列）；<br>
+（3）  去噪，识别实验过程引入的错误（**PCR**和测序过程错误）并合并入真实的生物学序列（特征序列、**ZOTU**），去除嵌合体序列，构建特征序列（**ZOTU**）表；<br>
+（4） 使用朴素贝叶斯算法对特征序列进行物种系统分类，去除来自线粒体的**16S**序列；<br>
+（5） 物种分类以及数据可视化；<br>
+（6） 计算多样性指数（**alpha，beta**）；<br>
+（7） 功能预测，使用**PICRust2/Tax4fun**预测功能组成；<br>
+（8） 差异分析，对特征序列表以及物种组成进行差异分析，使用**DESeq2**负二项分布模型；<br>
+<br/>
+<br/>
+    
+    '''.format(process1=process1, process2=process2, time=localtime)
+    with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+        f.write(introduction)
+
+    title3 = '''
+### **三 分析结果**
+<br/>
+<br/>
+
+    '''
+    with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+        f.write(title3)
+
+    stats = clean_data + '/sample.stats.long.txt'
+    stats = if_exist(stats)
+    seq_info = '''
+#### **1 数据统计**
+<br/>
+<br/>
+采用**Illumina NovaSeq**测序平台得到的下机数据（**Raw Data**）经过数据拆分、去引物序列、**PE Reads**拼接、**Tags**质量及长度过滤和截取以及去嵌合体后获得最终的有效数据（**Effective Tags**）， 基于有效序列进行构建特征序列表（**ZOTU**表），具体的数据产出统计结果见表**3-1**。
+<br/>
+
+<center>**表 3-1-1 测序数据统计表**</center>
+<br/>
+
+```{{r echo=FALSE, results='asis'}}
+table = read.csv('{stats}', head = TRUE, sep="\t", check.names=F, quote = "", comment.char="")
+library(knitr)
+kable(table)
+```
+<br/>
+**说明：raw data：**原始下机的**PE reads**数目；**Trimmomatic：**去除低质量以及接头序列后得到的**PE reads**数目；**mergepairs：**可以有效合并的**Tags**数目；**primer_match：**合并后的序列可以匹配实验引物序列的**Tags**数目；**Zotu：**最后形成的ZOTU特征表中样本的总**Tags**数目；
+
+结果目录**：**summarize /2.clean_data**，存放样本**Clean Tags**序列。
+<br/>
+<br/>
+
+
+    '''.format(stats=stats)
+    if Path(clean_data).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(seq_info)
+
+    krona = iamges + '/krona.png'
+    krona = if_exist(krona)
+    phylum_stack = zotu + '/bars/phylum.10.stack.png'
+    phylum_stack = if_exist(phylum_stack)
+    genus_heatmap = zotu + '/heatmap/genus.10.heatmap.png'
+    genus_heatmap = if_exist(genus_heatmap)
+    seq_tax = '''
+#### **2 序列分类**
+<br/>
+
+为了充分挖掘样品物种组成及多样性信息，首先需要对所有样品的全部Clean Tags 序列进行去噪，形成特征序列集合（**ZOTUs， Zero-radius Operational Taxonomic Units**）， 并选取**ZOTUs**的代表性序列对核糖体RNA数据库（默认选择**RDP**数据库）进行注释物种分类信息。
+基于物种分类信息注释结果，过滤掉叶绿体、线粒体序列； 基于**ZOTU**的丰度信息（绝对丰度以及相对丰度）及其物种分类注释信息， 对每个样品在各分类水平（**Kingdom，Phylum，Class，Order，Family，Genus**）上的序列总数目及其占总序列数的比例进行统计汇总；图**3-2-1 **通过**Krona**图可以真实的展示不同分类水平上的序列数及其在不同分类水平上的相对丰度。
+相对丰度可以有效的评估样本的物种注释分辨率（一般的注释到属的比例越高表示样本的ZOTU注释效果越好）及样本的物种复杂度（一般的注释到属比例越低表示样本复杂度越高）。 图**3-2-1**主要展示了门级别的部分物种相对丰度的分布情况，其他分类水平布展示结果请参见交付目录。
+<br/>
+
+
+<center>![图3-2-1 样本物种注释Krona饼图可视化]({krona}){{width=70%}}</center>
+<br/>
+
+<center>**图3-2-1 样本物种注释Krona饼图可视化**</center>
+<br/>
+
+<center>![图3-2-2 门水平上的物种相对丰度柱形图]({phylum_stack}){{width=70%}}</center>
+<br/>
+
+<center>**图3-2-2 门水平上的物种相对丰度柱形图**</center>
+<br/>
+
+说明：横坐标（**Sample Name**）是样品名，纵坐标（**Relative Abundance**）表示相对丰度。
+<br/>
+
+结果目录：**ZOTU**的聚类及注释分析结果存放于**summarize/3.zotu**目录, **zotus **目录为构建的特征序列表,及其相对丰度，**classify**目录为不同分类水平（门，纲，目，科，属）的**Tags**数目及其相对丰度，**bars**目录根据不同分类水平绘制柱状图。
+<br/>
+<br/>
+
+
+#### **3 群落聚类分析**
+<br/>
+
+根据所有样品在属水平的物种注释及丰度信息，可以选取关注的属（默认丰度排名较高的30个属）及其在每个样品中的丰度信息绘制热图，并从分类信息和样品间差异两个层面进行聚类，可以寻找物种或样本的聚集规律。
+<br/>
+
+<center>![图3-3-1 属水平物种丰度聚类图]({genus_heatmap}){{width=70%}}</center>
+<br/>
+
+<center>**图3-3-1 属水平物种丰度聚类图**</center>
+<br/>
+
+**说明：**横向为样品信息，纵向为物种注释信息，图中左侧的聚类树为物种聚类树，上方的聚类树为样品聚类树，热图部分对应的值为每一行物种相对丰度（为扩大颜色可识别度，相对丰度取**log10**变换）。
+<br/>
+
+结果目录：聚类热图结果存放于**summarize/2.zotu/heatmap**目录。
+<br/>
+<br/>
+
+    '''.format(krona=krona, phylum_stack=phylum_stack, genus_heatmap=genus_heatmap)
+    if Path(zotu).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(seq_tax)
+
+    alpha_data = alpha + '/diversity/alpha.txt'
+    alpha_data = if_exist(alpha_data)
+    shannon_2 = alpha + '/diversity/alpha/shannon_2.png'
+    shannon_2 = if_exist(shannon_2)
+    rarefactions_curve = alpha + '/rarefaction/shannon.rarefactions_curve.png'
+    rarefactions_curve = if_exist(rarefactions_curve)
+    rank_abundance = alpha + '/rank_abundance.png'
+    rank_abundance = if_exist(rank_abundance)
+    specaccum_curve = alpha + '/specaccum_curve.png'
+    specaccum_curve = if_exist(specaccum_curve)
+    alpha_info = '''
+
+####  **4 Alpha Diversity分析**
+<br/>
+
+##### **多样性指数统计**
+<br/>
+
+
+**Alpha**多样性是对某个样品中物种多样性的分析，包含样品中的物种类别的多样性——丰富度（**Richness**）和物种组成多少的整体分布——均匀度（**Evenness**）两个因素，通常用**Richness,  Chao1，Shannon，Simpson，Dominance**和**Equitability**等指数来评估样本的物种多样性。
+<br/>
+
+**Richness, Chao1，Shannon**三个指数是常用的评估丰富度的指标，数值越高表明样品包含的物种丰富度就越高。 其中**Richness**指数是指样本中被检测到的物种的个数； **Chao1**指数是通过低丰度物种来进一步预测样品中的物种的数量；**Shannon**指数的计算考虑到样品中的物种数量及其相对丰度信息，通过对数（如以2为底的**shannon_2**，也有自然对数为底的**shannon_e**或10为底的**shannon_10**）转换来预测样品中的分类多样性。
+<br/>
+
+**Simpson，Dominance和Equitability**三个指数是常用的评估均匀度的指标。其中**Simpson**指数表示随机选取两条序列属于同一个分类（物种水平）的概率（故数值在0~1之间），数值越接近1表示表明**ZOTUs**的丰度分部越不均匀；与**Simpson**指数相对，**Dominance**的取值为**1-Simpson**，表示随机选取两条序列属于不同分类（如物种水平）的概率；**Equitability**指数是根据**Shannon**指数值计算，所以也被称为**Shannon's equitability**，当其值为1时表明样品中的物种丰度分布绝对均匀，而其值越小这表明物种丰度分布呈现出越高的偏向。
+<br/>
+
+<center>表3-4-1 **Alpha**多样性指数统计表</center>
+<br/>
+
+```{{r echo=FALSE, results='asis'}}
+table = read.csv('{alpha_data}', head = TRUE, row.names=1, sep="\t", check.names=F, quote = "", comment.char="")
+library(knitr)
+kable(table)
+```
+<br/>
+
+<center>![图3-4-1  Alpha多样性指数（如Shannnon_2）在样品组间的箱形图展示]({shannon_2}){{width=70%}}</center>
+<br/>
+
+<center>**图3-4-1  **Alpha**多样性指数（如**Shannnon_2**）在样品组间的箱形图展示**</center>
+<br/>
+
+**说明：**横坐标是样品分组的组名，纵坐标多样性指数值（如**Shannon_2**）；箱线图从下往上一次表示了最小值，下四分位数，中位数，上四分位数和最大值，以及显示出可能的离群点（即范围±1.5IQR以外的值）。
+<br/>
+
+**alpha.long**提供了更多的**alpha**指数信息（https://drive5.com/usearch/manual/alpha_metrics.html，描述信息请参考该网址）
+<br/>
+
+结果目录： **alpha**指数统计结果文件为 **summarize/3.alpha/diversity** 目录
+<br/>
+<br/>
+
+##### **稀释曲线**
+<br/>
+
+
+**Rarefaction Curve**即稀释曲线，是从样品中随机抽取一定测序量的数据，统计它们所代表物种数目（也即是**ZOTUs**数目）或多样性指数，以数据量与物种多样性来构建的曲线，以用来说明样品的测序数据量是否合理，并间接反映样品中物种的丰富程度。稀释性曲线图中，当曲线趋向平坦时，说明测序数据量渐进合理（图3-4-2为**Shannon**指数稀释曲线，其它指数的稀释曲线展示结果请参见交付目录。
+<br/>
+
+<center>![图3-4-2 Shannon指数稀释曲线]({rarefactions_curve}){{width=70%}}</center>
+<br/>
+
+<center>**图3-4-2 Shannon指数稀释曲线**</center>
+<br/>
+
+结果目录：稀释曲线结果文件参考 **summarize/3.alpha**目录
+<br/>
+<br/>
+
+##### **Rank Abundance曲线**
+<br/>
+
+**Rank Abundance**曲线可直观的反应样品中包含的分类丰富度和均匀度，即在水平方向，分类的丰度由曲线的宽度来反映，分类的丰富度越高，曲线在横轴上的跨度越大；在垂直方向曲线的平滑程度，反映了样品中分类的均匀程度，曲线越平缓，物种分布越均匀（图3-4-3）。
+<br/>
+
+<center>![图3-4-3 Rank Abundance 曲线]({rank_abundance}){{width=70%}}</center>
+<br/>
+
+<center>**图3-4-3 Rank Abundance 曲线**</center>
+<br/>
+
+**说明：**横坐标为按**ZOTUs**的丰度排序的序号，纵坐标为对应的**ZOTUs**的绝对丰度的**log**值，不同的样品使用不同的颜色曲线表示。
+<br/>
+
+结果目录：**Rank abundance**结果文件为**summarize/3.alpha**目录；
+<br/>
+<br/>
+
+##### **物种累积曲线**
+<br/>
+
+物种累积曲线（**Species Accumulation Curves**）用于描述随着样本量的加大物种增加的状况，是调查样本的物种组成和预测样本中物种丰度的有效方式，在生物多样性和群落调查中，被广泛用于样本量是否充分的判断以及物种丰富度（**species richness**） 的估计。因此，通过物种累积曲线不仅可以判断样本量是否充分，在样本量充分的前提下，运用物种累积曲线还可以对物种丰富度进行预测（默认在样本量大于10个时分析），展示结果见图3-4-4。
+<br/>
+
+<center>![图3-4-4 Species accumulation curves 曲线]({specaccum_curve}){{width=70%}}</center>
+<br/>
+
+<center>**图3-4-4 Species accumulation curves 曲线**</center>
+<br/>
+
+**说明：**横坐标为样本数，纵坐标为对应的**ZOTUs**的数量。
+<br/>
+
+结果目录：**Rank abundance**结果文件为**summarize/4.alpha**目录；
+<br/>
+<br/>
+
+    '''.format(alpha_data=alpha_data, shannon_2=shannon_2, rarefactions_curve=rarefactions_curve,
+               rank_abundance=rank_abundance, specaccum_curve=specaccum_curve)
+    if Path(alpha).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(alpha_info)
+
+    beta_pca = beta + '/pca/zotu.pca.png'
+    beta_pca = if_exist(beta_pca)
+    beta_pcoa = beta + '/pcoa/bray_curtis/bray_curtis.pcoa.png'
+    beta_pcoa = if_exist(beta_pcoa)
+    beta_nmds = beta + '/nmds/bray_curtis/bray_curtis.nmds.png'
+    beta_nmds = if_exist(beta_nmds)
+    beta_upgma = beta + '/upgma/bray_curtis/bray_curtis.upgma.bar.png'
+    beta_upgma = if_exist(beta_upgma)
+    beta_info = '''
+#### **5 Beta Diversity分析**
+<br/>
+
+**Beta Diversity**是对不同样品间的微生物群落构成进行比较。根据样本的**ZOTUs**丰度信息计算**Bray Curtis，Weighted UniFrac和Unweighted UniFrac**距离来评估不同样品间的微生物群落构差异。<br>
+<br/>
+
+**Bray Curtis**距离是生态学上反应群落之间差异性最常用的指标，只考虑了物种的丰度信息。<br>
+<br/>
+
+**Unweighted UniFrac**距离是基于**ZOTUs**系统发生树进行计算的样本间的距离，只考虑了物种的有无。**Weighted UniFrac**距离是结合**ZOTUs**的丰度信息和物种系统发生树的信息来获得的样本间的距离。<br>
+<br/>
+
+**Unweighted UniFrac**距离对稀有物种比较敏感，而**Bray Curtis和Weighted UniFrac**距离则对丰度较高的物种更加敏感。 基于以上的距离矩阵，通过多变量统计学方法，如主成分分析（**PCA，Principal Component Analysis**），主坐标分析（**PCoA，Principal Co-ordinates Analysis**）和非加权组平均聚类分析（**UPGMA，Unweighted Pair-group Method with Arithmetic Means**）等分析，进一步从结果中挖掘各样品中的微生物群落结构差异和不同分类对样品间的贡献差异。<br>
+<br/>
+<br/>
+
+##### **Beta Diversity指数统计**
+<br/>
+
+**Weighted UniFrac**距离，**Unweighted UniFrac**距离及**Bray Curtis**距离作为**Beta Diversity**距离是衡量两个样品间的相异系数的指标。 一般的，数值越小，表示这两个样品在物种多样性方面存在的差异越小。
+<br/>
+
+结果目录：**Rank abundance**结果文件为**summarize/4.beta/distmx**目录；
+<br/>
+<br/>
+
+##### **PCA主成分分析**
+<br/>
+
+主成分分析（**PCA，Principal Component Analysis**），是一种应用方差分解，对多维数据进行降维，从而提取出数据中最主要元素和结构的方法， 如果样品的群落组成越相似，则它们在**PCA**图中的距离越接近。图3-5-1为**ZOTU**相对丰度的**PCA**分析结果。
+<br/>
+
+<center>![图3-5-1 基于ZOUT水平的主成分分析]({beta_pca}){{width=70%}}</center>
+<br/>
+
+<center>**图3-5-1 基于ZOUT水平的主成分分析**</center>
+<br/>
+
+**说明：** **X**坐标表示第一主成分（**PC1**）， **Y**坐标表示第二主成分（**PC2**），对应的百分比则表示改成分对样品间差异的解释度；图中的每个点表示一个样品，点与点之间的距离表示差异程度。同一个组的样品使用同一种颜色表示。对于分组的样品，会用椭圆来展示样品组见的区分区域。
+<br/>
+
+结果目录： **PCA**降维度分析统计结果文件为 **summarize/4.beta/pca**目录
+<br/>
+<br/>
+
+##### **PCoA分析**
+<br/>
+
+主坐标分析（**PCoA，Principal Co-ordinates Analysis**），是一种与**PCA**类似的降维排序方法，从多维数据中提取出最主要元素和结构。区别在于**PCA**是基于样品的相似系数矩阵来寻找主坐标， 而**PCoA**是基于距离矩阵来寻找主坐标。 基于**Bray Curtis**距离、**Weighted UniFrac**距离和**Unweighted UniFrac**距离来进行**PCoA**分析，并选取贡献率最大的主坐标组合进行作图展示，图中样品的距离越接近，表示样品的物种组成结构越相似。图3-5-2为基于**Bray Curtis**距离进行的**PCoA**分析，其他距离的展示结果请参见交付目录。
+<br/>
+
+<center>![图3-5-2 基于种水平的主坐标分析 (bray_curtis)]({beta_pcoa}){{width=70%}}</center>
+<br/>
+
+<center>**图3-5-2 基于种水平的主坐标分析 (bray_curtis)**</center>
+<br/>
+
+**说明：** **X**坐标表示第一主成分（**PC1**）， **Y**坐标表示第二主成分（**PC2**），对应的百分比则表示改成分对样品间差异的解释度；图中的每个点表示一个样品，点与点之间的距离表示差异程度。同一个组的样品使用同一种颜色表示。对于分组的样品，会用椭圆来展示样品组见的区分区域。
+<br/>
+
+结果目录： **PCoA**降维度分析统计结果文件为 **summarize/4.beta/pcoa**目录
+<br/>
+<br/>
+
+##### **NMDS 分析**
+<br/>
+
+无度量多维标定法（**NMDS** ，**Non-Metric Multi-Dimensional Scaling**）统计是一种适用于生态学研究的排序方法，类似于**PCA**和**PCoA**，通过样本的分布了解不同组间的差异，组内差异等。**NMDS**包括一类排序方法，其设计目的是为了克服以前的排序方法（即线性模型，包括**PCA**、**PCoA**）的缺点，**NMDS**的模型是非线性的，能更好地反映生态学数据的非线性结构，非度量多维尺度法将多维空间的研究对象（样本或变量）简化到低维空间进行定位、分析和归类, 同时又保留对象间原始关系，适用于无法获得研究对象间精确的相似性或相异性数据，仅能得到他们之间等级关系数据的情形（图3-5-3）。
+<br/>
+
+<center>![图3-5-3 基于种水平的无度量多维标定法 (bray_curtis)]({beta_nmds}){{width=70%}}</center>
+<br/>
+
+<center>**图3-5-3 基于种水平的无度量多维标定法 (bray_curtis)**</center>
+<br/>
+
+**说明：** **X**坐标表示第一成分， **Y**坐标表示第二成分，**Z**坐标表示第三成分，图中的每个点表示一个样品，同一个组的样品使用同一种颜色表示。对于分组的样品，会用椭圆来展示样品组见的区分区域，点与点之间的距离表示差异程度；一般当**Stress**小于0.2时，表明**NMDS**分析具有一定的可靠性。对于分组的样品，会用椭圆来展示样品组见的区分区域。
+<br/>
+
+结果目录： **NMDSv降维度分析统计结果文件为 **summarize/4.beta/nmds**目录
+<br/>
+<br/>
+
+##### **样品聚类分析**
+<br/>
+
+为了研究不同样品间的相似性，还可以通过对样品进行聚类分析，采用**UPGMA**（**Unweighted Pair-group Method with Arithmetic Mean**）聚类分析方法构建样品的聚类树。 将距离矩阵和做**UPGMA**聚类分析，并将聚类结果与各样品在门水平（**Phylum**）上的部分物种相对丰度结合。
+<br/>
+
+<center>![图3-5-4 基于Bray Curtis距离的UPGMA聚类树与门水平部分物种的信息统计]({beta_upgma}){{width=70%}}</center>
+<br/>
+
+<center>**图3-5-4 基于Bray Curtis距离的UPGMA聚类树与门水平部分物种的信息统计**</center>
+<br/>
+
+**说明：**左侧是**UPGMA**算法基于**Bray Curtis**距离构建的UPGMA聚类树，右侧的是各样品在门水平上的部分物种（丰度最高的10个）的相对丰度分布图。
+<br/>
+
+结果目录： 样品聚类分析结果文件在：**summarize/4.beta/upgma** 目录 
+<br/>
+<br/>
+
+    '''.format(beta_pca=beta_pca, beta_pcoa=beta_pcoa, beta_nmds=beta_nmds, beta_upgma=beta_upgma)
+    if Path(beta).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(beta_info)
+
+    anosim_bray_curtis = beta + '/anosim/bray_curtis.png'
+    anosim_bray_curtis = if_exist(anosim_bray_curtis)
+    DESeq2_genus = statistics + '/DESeq2/genus/volcano/' + group + '.png'
+    DESeq2_genus = if_exist(DESeq2_genus)
+    deseq_info = '''
+#### **6 差异分析**
+<br/>
+
+微生物多样性差异分析包含整体差异和特征差异分析，整体差异主要比较组间差异和组内的差异，判断分组的合理性，特征差异主要观察物种分类水平的是否在组见存在显著性差异。
+<br/>
+<br/>
+
+##### **组间群落结构差异显著性检验**
+<br/>
+
+采用**Anosim**分析考察组间群落结构差异是否显著性，和组内差异、组间差异的大小。**Anosim**分析是一种非参数检验，用来检验组间(两组或多组)的差异是否显著大于组内差异，从而判断分组是否有意义。
+一般的，要求每组至少3个样本。
+<br/>
+
+<center>![图3-6-1 基于Bray Curtis距离的Anosim分析结果展示]({anosim_bray_curtis}){{width=70%}}</center>
+<br/>
+
+<center>**图3-6-1 基于Bray Curtis距离的Anosim分析结果展示**</center>
+<br/>
+
+**说明：** **R**值介于 [-1，1]之间，当R＞0是，表明组间样品差异显著；R＜0时，说明组内样品的差异大于组间样品差异，统计分析的可信度值 P<=0.05时，表明统计具有显著性。
+<br/>
+
+结果目录：组间群落结构差异显著性检验 结果文件在：**summarize/4.beta/anosim**目录，**submatrix** 提供样本组之间的比对。
+<br/>
+<br/>
+
+##### **物种组成差异分析**
+<br/>
+
+针对物种组成以及功能组成，分析不同组之间是否存在显著性统计差异，鉴于生物学特征的数值的分布特征， 分析结果采用了基于负二项分布的统计模型进行检验。
+<br/>
+
+<center>![图3-6-2 物种组成（Genus水平）分组差异火山图]({DESeq2_genus}){{width=70%}}</center>
+<br/>
+
+<center>**图3-6-2 物种组成（Genus水平）分组差异火山图**</center>
+<br/>
+
+ **说明：** 该结果为Genus水平的分组差异结果， **DESeq2** 采用 t**est=Wald、 fitType=parametric **参数对分类（门、纲、目、科、属、种）水平的原始**reads**数进行差异鉴定， 红色表示**Control**相对于**Case**丰度上调，绿色表示**Control**相对于**Case**丰度下调，蓝色表示没有显著性变化，参数设定调整后的**Pvalue**值（**p.adjust**）小于等于0.05.
+<br/>
+
+结果目录：物种差异显著性检验 结果文件在：**summarize/6.statistics**目录
+<br/>
+<br/>
+
+    '''.format(anosim_bray_curtis=anosim_bray_curtis, DESeq2_genus=DESeq2_genus)
+    if Path(beta).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(deseq_info)
+
+    picrust_ko_pca = picrust + '/prediction/ko/ko.pca.png'
+    picrust_ko_pca = if_exist(picrust_ko_pca)
+    picrust_ko_pcoa = picrust + '/prediction/ko/ko.pcoa.png'
+    picrust_ko_pcoa = if_exist(picrust_ko_pcoa)
+    kegg_info = '''
+#### **7 功能预测**
+<br/>
+
+在**16S**分析中，将构建的**ZOTU**序列与已知功能的细菌**16S**序列数据库（比如：**KEGG 16S**序列数据库、**Silva SSU**数据库、）进行比对，获得细菌在环境样本中的丰度信息，直接或者间接映射到**KEGG**数据库已注释的微生物基因组，结合其**16S rRNA **基因个数以及功能基因（使用**KEGG Ortholog，KO**表征）的丰度信息，从而获得样本的包含的(部分)已知细菌的功能数据及其丰度信息后，可以进一步对样品中的代谢功能及通路进行挖掘，如基于**KO**表征进行的**PCA**分析，见图3-7-1。
+    **Tax4fun** 采用利用**Silva SSU**数据库进行KEGG的功能预测，**PICRust2**采用**IMG**数据库的全基因组信息，构建已知序列的系统进化树，并将**ZOTUs**序列映射到系统进化树上，并预测其功能空间，默认使用**Tax4fun**功能预测。
+<br/>
+
+<center>![图3-7-1 基于KO丰度表进行PCA分析]({picrust_ko_pca}){{width=70%}}</center>
+<br/>
+
+<center>**图3-7-1 基于KO丰度表进行PCA分析**</center>
+<br/>
+
+**说明：X**坐标表示第一主成分（**PC1**）， **Y**坐标表示第二主成分（**PC2**），**Z**坐标表示第三主成分（**PC3**），对应的百分比则表示该成分对样品间差异的解释度；图中的每个点表示一个样品，点与点之间的距离表示差异程度。
+<br/>
+
+<center>![图3-7-2 基于KO水平的主坐标分析 (bray_curtis)]({picrust_ko_pcoa}){{width=70%}}</center>
+<br/>
+
+<center>**图3-7-2 基于KO水平的主坐标分析 (bray_curtis)**</center>
+<br/>
+
+**说明： X**坐标表示第一主成分（**PC1**）， **Y**坐标表示第二主成分（**PC2**），对应的百分比则表示改成分对样品间差异的解释度；图中的每个点表示一个样品，点与点之间的距离表示差异程度。同一个组的样品使用同一种颜色表示。对于分组的样品，会用椭圆来展示样品组见的区分区域。
+<br/>
+
+结果目录：功能预测 结果文件在：**summarize/5.picrusts** 或者 **summarize/5.tax4fun**目录
+<br/>
+<br/>
+<br/>
+
+    '''.format(picrust_ko_pca=picrust_ko_pca, picrust_ko_pcoa=picrust_ko_pcoa)
+    if Path(picrust).exists():
+        with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+            f.write(kegg_info)
+
+    reference = '''
+### **四 分析方法及参考文献**
+<br/>
+
+#### **1  下机数据质量控制**
+<br/>
+数据下机后，截去**Barcode**序列，将得到的原始序列拆分成单个样本数据，使用**Trimmomatic**（版本0.38） [1] 对拆分后的数据进行质量控制，过滤序列尾部质量值2以下的碱基，设置4bp的窗口，如果窗口内的平均质量值低于15，从窗口开始截去后端碱基，并过滤掉长度过小的序列（过短的**read**，后期无法完成拼接），使用**USEARCH**（版本 11.2.64） [2]对过滤后的序列数据进行拼接处理，得到拼接的数据，拼接得到序列包含扩增引物，可能会影响**ZOTU**构建，需要切除双端的引物（允许2个碱基错配）， 以及过滤不包含正常引物序列数据，得到高质量的**Tags**数据（**Clean Tags**）。
+<br/>
+<br/>
+
+#### **2  构建ZOTU表**
+<br/>
+使用 **UNOISE** 算法 [6]（**USEARCH**版本11.2.64）对所有样品的全部**Clean Tags** 序列进行去噪音，形成**ZOTU**集合。
+具体步骤：首先使用**USEARCH fastq_filter** 去除**Clean reads**中低质量序列 （默认： **-fastq_maxee** 1）， 合并处理后的序列，使用**USEARCH fastx_uniques** 获得按照丰度排序的非冗余序列。 **USEARCH unoise3**算法（**minsize** = 8）对非冗余序列去噪，获得**ZOTU** 序列，最后将所有的**clean reads**比对到代表序列获得**ZOTU**在每个样本中的相对丰度。
+<br/>
+<br/>
+
+#### **3  物种分类及其可视化**
+<br/>
+
+将选取的 **(Z)OTU**代表序列使用**SINTAXv算法（**USEARCH**版本11.2.64）[7]与**RDP 16S Training set v16** 数据库进行物种注释，并选取算法可信度大于0.8的作为注释结果染；去除注释为叶绿体或线粒体（**16S**扩增子）相关的**OTU**后获得新的**OTU**表。
+<br/>
+
+基于样本内的**(Z)OTU**的物种系统发生关系及相对丰度信息，使用**KRONA**[8]软件（http://sourceforge.net/projects/krona/ ）对单个样本的物种注释结果进行可视化；
+<br/>
+
+使用**R**软件（版本 3.2.3）[9] 对物种注释结果进行统计和可视化展示，并使用**hclust** （https://bitbucket.org/nsegata/hclust）对OTU级别和不同分类级别的部分物种信息绘制热图，同时进行样本间和物种间的聚类分析。
+使用 **USEAERCH otutab_rare**对于**(Z)OTU**表进行标准化， 标准化数值为所有样本中序列最少的样本的序列数，后续分析基于标准化的 **(Z)OTU** 表进行。
+<br/>
+<br/>
+
+#### **4  Alpha Diversity分析**
+<br/>
+基于 **(Z)OTU** 丰度表，使用**USEARCH  alpha_div** 子命令（版本 11.2.64）进行多种多样性指数（**richness, Chao1, Shannon**等）的计算；
+**OTU**代表序列的相似性树使用**PICRUSt2** （版本 2.3.0-b）[10] 流程获得， **PICRUSt2**使用了**HMMER**以及**EPA-NG**将代表序列比对到参考多序列比对文件，构建系统进化树，将查询序列的所有节点抽取出构建 **(Z)OTU **代表序列的相似性树。
+<br/>
+<br/>
+
+#### **5  beta Diversity分析**
+<br/>
+
+由于高通量测序过程会导致样品间的数据量差异较大，为了更准确评估样品间和组间的差异，可以使用 **USEARCH otutab_norm**对各样品的数据按照一定的数据量（可以选择**ZOTU**表各样本中reads数最小的数值）进行抽样；用抽样后的数据整理得到均一化后的**OTU**丰度表，并用**USEARCH   beta_div**计算样品间的**beta**多样性距离矩阵，常用的包含 **weighted_unifrac，unweighted_unifrac和bray_curtis**三种，基于三种**beta**多样性距离矩阵，使用**R**软件的进行**PCoA**分析并绘图，基于均一化的**OTU**丰度表，使用**R**软件的**gmodels**包在不同分类水平进行**PCA**的分析并绘图，基于三种**beta**多样性距离矩阵，使用R软件的进行**NMDS**分析并绘图；
+基于均一化的**(Z)OTU**丰度表计算的三种β多样性距离矩阵，使用**R**软件的**Vegan**包（**Version  2.4.2**）[11]进行**Anosim**分析并绘图；
+<br/>
+<br/>
+
+#### **6 差异分析**
+<br/>
+
+使用**DESeq2**（版本1.26.0）[12]鉴定差异的物种组成， **DESeq2** 采用 **test=Wald、 fitType=parametric** 参数对分类（门、纲、目、科、属、种）水平的原始**reads**数进行差异鉴定。
+<br/>
+<br/>
+
+#### **7 功能预测**
+<br/>
+
+使用**PICRust2** （版本 2.3.0b）[10] **IMG** 数据库的参考 **16S** 序列库将 **(Z)OTU** 序列映射到系统进化树上，并预测其 **KEGG** 功能空间功能空间，获取详细的获取详细的 **KO** 的丰度信息，并使用和的丰度信息，并使用和KOKO关联的代谢通路、酶、反应等高一层关联的代谢通路、酶、反应等高一层 KEGG 注释信息，最后进行统计分析和展示。注释信息，最后进行统计分析和展示。
+<br/>
+<br/>
+
+#### **8 数据处理以及数据可视化**
+<br/>
+
+数据可视化部分都是通过**R**进行绘制，中间的数据格式转化皆通过**Biostack® Suits**（包含： **fastx-utils、 tsv-utils、 atlas-utils、 kraken-utils**等， https://github.com/jameslz/biostack-suits）
+<br/>
+<br/>
+
+#### **9. 参考文献**
+<br/>
+
+1.	Bolger, A.M., M. Lohse, and B. Usadel, Trimmomatic: a flexible trimmer for Illumina sequence data. Bioinformatics, 2014. 30(15): p. 2114-2120.
+<br/>
+
+2.	Edgar, R.C., Search and clustering orders of magnitude faster than BLAST. Bioinformatics, 2010. 26(19): p. 2460-2461.
+<br/>
+
+3.	Bolger, A. and F. Giorgi, Trimmomatic: A Flexible Read Trimming Tool for Illumina NGS Data. URL http://www.usadellab.org/cms/index.php.
+<br/>
+
+4.	Edgar, R.C. and H. Flyvbjerg, Error filtering, pair assembly and error correction for next-generation sequencing reads. Bioinformatics, 2015. 31(21): p. 3476-3482.
+<br/>
+
+5.	Edgar, R.C., UPARSE: highly accurate OTU sequences from microbial amplicon reads. Nature methods, 2013. 10(10): p. 996.
+<br/>
+
+6.	Edgar, R.C., UNOISE2: improved error-correction for Illumina 16S and ITS amplicon sequencing. BioRxiv, 2016: p. 081257.
+<br/>
+
+7.	Edgar, R., SINTAX: a simple non-Bayesian taxonomy classifier for 16S and ITS sequences. BioRxiv, 2016: p. 074161.
+<br/>
+
+8.	Ondov, B.D., N.H. Bergman, and A.M. Phillippy, Interactive metagenomic visualization in a Web browser. BMC bioinformatics, 2011. 12(1): p. 385.
+<br/>
+
+9.	Team, R.C., R: A language and environment for statistical computing. 2013.
+<br/>
+
+10.	Douglas, G.M., Maffei, V.J., Zaneveld, J.R. et al. PICRUSt2 for prediction of metagenome functions. Nat Biotechnol 38, 685–688 (2020).
+<br/>
+
+11.	Dixon, P., VEGAN, a package of R functions for community ecology. Journal of Vegetation Science, 2003. 14(6): p. 927-930.
+<br/>
+
+12.	Love, M.I., W. Huber, and S. Anders, Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2. Genome biology, 2014. 15(12): p. 550.
+<br/>
+
+13.	Segata, N., et al., Metagenomic biomarker discovery and explanation. Genome biology, 2011. 12(6): p. R60.
+<br/>
+
+14.	Aßhauer, K.P., et al., Tax4Fun: predicting functional profiles from metagenomic 16S rRNA data. Bioinformatics, 2015. 31(17): p. 2882-2884.
+<br/>
+
+15.	Oksanen, J., et al., The vegan package. Community ecology package, 2007. 10: p. 631-637.
+<br/>
+
+
+    '''
+    with open(path + '/report.Rmd', 'a', encoding='utf-8')as f:
+        f.write(reference)
+
+
+args = parse_arguments()
+summarize_path = args.summarize_path
+iamges = args.iamges_path
+group = args.group
+write_data(summarize_path, iamges, group)

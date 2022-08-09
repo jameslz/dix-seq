@@ -1,0 +1,271 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::Basename;
+use Cwd 'abs_path';
+
+my $version = "0.0.2";
+
+my %opts = (q =>'0.05',
+            r =>'0.001',
+            t => 40);
+
+getopts('q:t:r:p', \%opts);
+
+&usage if (-t STDIN && @ARGV != 3);
+
+my  $query          =  shift @ARGV;
+my  $mapping_file   =  shift @ARGV;
+my  $project_home   =  abs_path(shift @ARGV);
+
+my  $runs           =  qq{$project_home/runs};
+my  $data           =  qq{$project_home/data};
+my  $report         =  qq{$project_home/report};
+
+my  $binaries       =  dirname( abs_path($0) ) . '/binaries';
+my  $utils          =  dirname( abs_path($0) ) . '/utils';
+
+my  $qval           =  $opts{q};
+my  $cpus           =  $opts{t};
+my  $rowsum         =  $opts{r};
+my  $c              =  ($opts{p}) ? -2 : -1;
+
+my  @elements_t     =  ();
+my  %pairwise_h     =  ();
+my  $pairwise_z     =  0;
+my  %catalog_h      =  ();
+my  $label          =  ();
+
+submit();
+exit;
+
+sub submit {
+
+    make_fs();
+    validate_run();
+    mapping_file();
+    krst_run();
+    violin_run();
+
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p  $runs 
+                           $data
+                           $report/violin};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub validate_run {
+
+    my $sh    =  qq{$runs/validate.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    print EXPORT validate();
+    print EXPORT subset();
+    print EXPORT rehead();
+
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub validate {
+
+    my $cmd  = qq{$binaries/validate               \
+                    $mapping_file $query           \
+                  1>$data/metadata.txt             \
+                  2>$data/validate.txt ;\n};
+       $cmd  =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub subset {
+
+    my $cmd =  qq{cut -f1 $data/metadata.txt       \
+                  |$binaries/tsv-utils subcolumn   \
+                    -r $query -                    \
+                  |$binaries/text-clean -          \
+                  |grep -v -P ^"Above_"            \
+                  |$binaries/tsv-utils trim        \
+                    - $rowsum                      \
+                  >$data/data.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub rehead {
+
+    my $cmd =  qq{$binaries/tsv-utils groupline    \
+                     -r                            \
+                     $data/metadata.txt            \
+                     $data/data.txt                \
+                  >$data/rehead.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub mapping_file {
+
+    open( PROFILE,  qq{$data/metadata.txt} )   || die "[ERR]: can't open $data/metadata.txt;\n";
+
+    my $head;
+    ($label, $head) = split /\t/, <PROFILE>, 2; 
+    my @catalog_t  = ();
+
+    while(<PROFILE>){
+
+        $_=~s/\s+$//;        
+        my @t = split /\t/, $_;
+       
+        if(!exists $catalog_h{ $t[-1] }){
+            push @catalog_t, $t[-1];
+        }
+
+        push @{$catalog_h{ $t[-1] } } , $t[0];
+
+    } 
+    close PROFILE;
+
+    for(my $i = 0; $i < $#catalog_t; ++$i){
+        for(my $j = $i + 1; $j <= $#catalog_t; ++$j){
+            @{$pairwise_h{ $pairwise_z } } = ($catalog_t[ $i ], $catalog_t[ $j ]); 
+            $pairwise_z++;
+        } 
+    }
+
+}
+
+sub krst_run {
+
+    my $sh    =  qq{$runs/krst.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    for(my $z = 0; $z < $pairwise_z; ++$z){
+        my $q = $pairwise_h{$z}[0];
+        my $s = $pairwise_h{$z}[1];
+        print EXPORT krst($q, $s);
+    }
+    
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub krst {
+
+    my $q = shift;
+    my $s = shift;
+
+    my $cmd = qq{$utils/wilcox_rank_sum_test.R       \
+                    $data/rehead.txt                 \
+                    $q $s                            \
+                    $report/$q\_$s.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+   return $cmd;
+
+}
+
+sub violin_run {
+
+    my $sh = qq{$runs/violin.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+    
+    elements_tabs();
+
+    foreach my $e ( @elements_t ) {
+       print EXPORT feature_tab( $e );
+       print EXPORT violin( $e );
+       print EXPORT pdf2png( $e );
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $cpus "{}"\n};
+
+}
+
+sub elements_tabs {
+
+
+    my %elements_h = ();
+    for(my $z = 0; $z < $pairwise_z; ++$z){
+       
+        my $q = $pairwise_h{$z}[0];
+        my $s = $pairwise_h{$z}[1];
+        my $fn = qq{$report/$q\_$s.txt};
+        open( DATA, $fn )   || die "[ERR]: can't open $fn \n";
+        <DATA>;
+        while(<DATA>){
+            $_=~s/\s+$//;        
+            my @t = split /\t/, $_;    
+            next if( $t[$c] eq "NA");
+            next if( $t[$c] > $qval); 
+            $elements_h{ $t[0] } = ();
+         } 
+        close DATA;
+    }    
+    @elements_t = keys %elements_h;
+
+}
+
+sub feature_tab {
+
+    my $e   = shift;
+    my $cmd = qq{$binaries/tsv-utils subset         \
+                    -k -c 1                         \
+                    $data/data.txt                  \
+                    $e                              \
+                >$report/violin/$e.txt;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub violin {
+
+    my $e   = shift;
+    my $cmd = qq{$utils/Violin.R                    \
+                    $report/violin/$e.txt           \
+                    $data/metadata.txt              \
+                    $report/violin/$e.pdf           \
+                    $e;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+
+sub pdf2png {
+
+    my $e   = shift;
+    my $cmd = qq{$utils/pdf2png $report/violin/$e.pdf;\n};
+    return $cmd;   
+
+}
+
+
+sub usage {
+
+  printf STDERR qq(
+
+Program: wrst-kit: Wilcoxon Rank Sum Test/ Mann Whitney U Test 
+Version: $version
+Contact: ZHANG LEI <zhanglei\@logictek.cn>\n
+Usage:   wrst-kit <feature_tab> <mapping_file> <project>\n
+Options: -t INT   cpus for parallel, default: [40]
+         -q INT   Pval/Padj cutoff for stats visualization, default: [0.05]
+         -r FLOAT remove features rowsum cutoff, default: [0.001]
+         -p       use Pvalue replace Padj.
+
+);
+exit;
+
+}

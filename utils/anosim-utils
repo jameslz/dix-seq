@@ -1,0 +1,136 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Switch;
+
+my $usage = <<_EOUSAGE_;
+
+Usage: amosim-utils <command> <arguments>
+version: 0.0.1
+supports:
+
+    fmt    <mapping_file>  <distmat>
+    paired <mapping_file>  <path>
+
+Licenced:
+(c) 2020-2020 - LEI ZHANG
+Logic Informatics Co.,Ltd.
+zhanglei\@logicinformatics.com
+
+
+_EOUSAGE_
+;
+
+if( ( scalar @ARGV) < 1){
+    printf STDERR $usage;
+    exit;
+}
+
+my  %samples_h = ();
+my  @catalog_t = ();
+my  %catalog_h = ();
+
+my  $cmd       = shift @ARGV; 
+
+switch($cmd){
+
+    case 'fmt'          { fmt_run(); }
+    case 'paired'       { paired_run(); }
+    else                { print qq{Not support subcommond $cmd \n};};
+
+}
+
+exit;
+
+mapping_file();
+distmat();
+
+exit;
+
+sub fmt_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($mapping_file, $distmat) = @ARGV;
+    mapping_file( $mapping_file );
+    distmat( $distmat );
+
+}
+
+sub mapping_file {
+
+  my $mapping_file = shift;
+  open( DATA,  $mapping_file )  || die "[ERR]: can't find $mapping_file $!\n";
+  while (<DATA>) {
+      chomp;
+      next if(/^#/);
+      my @its = split /\t/, $_;
+      $samples_h{ $its[0] }   = $its[-1];
+      
+      push @catalog_t , $its[-1] if(!exists $catalog_h{ $its[-1] });
+      push  @{$catalog_h{ $its[-1] }} , qq{$its[0]__$its[-1]};
+
+  }
+  close DATA;
+
+}
+
+sub distmat {
+
+    my $distmat = shift;
+    open( DATA, $distmat ) || die "[ERR]: can't find $distmat $!\n";
+    my $header = <DATA>;
+    print_head( $header );
+
+    while (<DATA>) {
+        chomp;
+        my @its = split /\t/, $_;
+        $its[0] = (exists $samples_h{ $its[0] }) ? $its[0] . '__' . $samples_h{ $its[0] } : $its[0];
+        print join("\t", @its), "\n";
+
+    }
+    close DATA;
+}
+
+sub print_head {
+    
+    my $head    =  shift;
+    $head =~ s/\s+$//;
+    my @samples = map { (exists $samples_h{$_}) ?  $_ . '__' . $samples_h{$_} : $_ } split /\t/, $head;
+    print join("\t", @samples), "\n";
+
+}
+
+sub paired_run {
+
+    if( @ARGV != 2 ){
+        printf STDERR qq{\n[ERR] arguments number error!\n$usage};
+        exit;
+    }
+
+    my ($mapping_file, $path) = @ARGV;
+    mapping_file( $mapping_file );
+    print_paired( $path );
+
+}
+
+sub print_paired {
+
+   my $path = shift;
+   for (my $i = 0; $i < $#catalog_t; $i++) {
+      for (my $j = $i + 1; $j <= $#catalog_t; $j++) {
+           
+          open(EXPORT, qq{>$path/$catalog_t[$i]\_$catalog_t[$j].txt}) || die "$!\n";
+          print EXPORT  join("\n", @{$catalog_h{  $catalog_t[$i] }});
+          print EXPORT  qq{\n};
+          print EXPORT  join("\n", @{$catalog_h{  $catalog_t[$j] }});
+          close EXPORT;
+     
+      }
+   }
+
+}

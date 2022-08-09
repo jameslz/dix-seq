@@ -1,0 +1,287 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my %metadata        = ();
+profile();
+
+my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/picrust2};
+
+my  $pipeline       = qq{$project_home/pipeline};
+my  $runs           = qq{$project_home/runs};
+my  $prediction     = qq{$project_home/prediction};
+my  $report         = qq{$project_home/report};
+
+my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $algo           =  (exists $metadata{tree}) ? $metadata{tree} : 'distmx';
+my  $db             =  dirname( abs_path($0) ) . '/../db/picrust2';
+
+my  %catalog_h      =  ();
+my  @samples_t      =  ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+       
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub submit {
+    
+    mapping_file();
+    make_fs();
+    picrust2_run();
+    prediction_run();
+    mdr_run();
+    summary_run();
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}}) || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[-1] } = ();
+    
+    }
+    close PROFILE;
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $runs         \
+                          $prediction   \
+                          $pipeline     \
+                          $report};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub picrust2_run {
+    
+    my $sh = qq{$runs/picrust2.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    if(-e qq{$pipeline}){
+       print EXPORT qq{rm -rf $pipeline;\n};
+    }
+    
+    print EXPORT picrust2();
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub picrust2 {
+
+  my $para = (exists $metadata{pathway} && $metadata{pathway} eq 'T') ? ' ' : '--no_pathways';
+  my $cmd  = qq{picrust2_pipeline.py                 \
+                   -s  $datasets/zotus.fasta         \
+                   -i  $datasets/zotu_table_norm.txt \
+                   -o  $pipeline                     \
+                   -p  $metadata{cpus}               \
+                   $para                             \
+                   --stratified                      \
+                   --wide_table                      \
+                   --per_sequence_contrib  ;\n};
+     $cmd  =~ s/\s+\n\s+/ /msg;
+  return  $cmd;
+
+}
+
+
+sub prediction_run {
+
+    my $sh = qq{$runs/prediction.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+  
+    print EXPORT qq{$binaries/tsv-utils strip  $metadata{mapping_file} | cut -f1,2 | grep -v '#' >$report/metadata.txt;\n};
+    print EXPORT prediction();
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+  
+}
+
+sub prediction {
+
+    my @cmd_t = ();
+    my $cmd= ();
+
+    $cmd = qq{$binaries/tsv-utils definition  \
+                -d " "                        \
+                $db/ko_info.tsv               \
+                $pipeline/KO_metagenome_out/pred_metagenome_unstrat.tsv.gz \
+              >$prediction/ko.txt ;\n};
+    $cmd  =~ s/\s+\n\s+/ /msg;
+    push @cmd_t, $cmd;
+    
+    $cmd = qq{$binaries/tsv-utils definition   \
+                -d " "                         \
+                $db/ec_level4_info.tsv         \
+                $pipeline/EC_metagenome_out/pred_metagenome_unstrat.tsv.gz \
+              >$prediction/enzyme.txt ;\n};
+    $cmd  =~ s/\s+\n\s+/ /msg;
+    push @cmd_t, $cmd;
+    
+    
+    if (exists $metadata{pathway} && $metadata{pathway} eq 'T') {
+
+       $cmd = qq{$binaries/tsv-utils definition       \
+                   -d " "                             \
+                   $db/metacyc_pathways_info.txt      \
+                   $pipeline/pathways_out/path_abun_unstrat.tsv.gz \
+                 >$prediction/pathway.txt ;\n};
+       $cmd  =~ s/\s+\n\s+/ /msg;
+       push @cmd_t, $cmd;
+    }
+
+    return join("", @cmd_t);
+}
+
+sub mdr_run {
+    
+    my $sh = qq{$runs/mdr.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    my @ontologies_t = qw/ko enzyme/;
+    if (exists $metadata{pathway} && $metadata{pathway} eq 'T'){
+       push @ontologies_t, "pathway";
+    }
+    
+    foreach my $ontology (@ontologies_t) {
+        print EXPORT qq{mkdir -p $prediction/$ontology ;\n};
+        print EXPORT pca( $ontology );
+        print EXPORT pdf2png('pca', $ontology);
+        print EXPORT pcoa( $ontology );
+        print EXPORT pdf2png('pcoa', $ontology);
+        print EXPORT nmds( $ontology );
+        print EXPORT pdf2png('nmds', $ontology);
+
+    }
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 7 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub pdf2png {
+
+   my ($type, $ontology) = @_;
+   my $cmd  = qq{$utils/pdf2png \
+                   $prediction/$ontology/$ontology.$type.pdf ;\n};
+      $cmd =~ s/\s+\n\s+/ /msg;
+  return $cmd; 
+
+}
+
+sub pca {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $cmd     = qq{$utils/PCA.R                    \
+                        $ellipse_para                \
+                        $text_para                   \
+                        $prediction/$ontology.txt    \
+                        $report/metadata.txt         \
+                        $prediction/$ontology/$ontology.pca.pdf;\n};
+        $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub pcoa {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $method       =  (exists $metadata{vegdist}) ? $metadata{vegdist} : "bray";
+    my $cmd     = qq{$utils/PCoA.R                      \
+                        $ellipse_para                   \
+                        $text_para                      \
+                        -m $method                      \
+                        $prediction/$ontology.txt       \
+                        $report/metadata.txt            \
+                        $prediction/$ontology/$ontology.pcoa.pdf;\n};
+        $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub nmds {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $method       =  (exists $metadata{vegdist}) ? $metadata{vegdist} : "bray";
+    my $cmd     = qq{$utils/NMDS.R                      \
+                        $ellipse_para                   \
+                        $text_para                      \
+                        -m $method                      \
+                        $prediction/$ontology.txt       \
+                        $report/metadata.txt            \
+                        $prediction/$ontology/$ontology.nmds.pdf;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub summary_run {
+    
+    my $sh = qq{$runs/summary.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+   
+    print EXPORT summary();
+   
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+
+sub summary {
+
+    my @ontologies_t = qw/ko enzyme/;
+    
+    if (exists $metadata{pathway} && $metadata{pathway} eq 'T'){
+       push @ontologies_t, "pathway";
+    }
+    
+    my $list = join(" ", ( map { qq{$_:$prediction/$_.txt} } @ontologies_t) );
+    my $cmd  = qq{$binaries/tsv-utils tsv2xlsx $report/picrust2.metagenome.xlsx $list ;\n};
+    return $cmd;
+
+}

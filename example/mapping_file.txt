@@ -1,0 +1,12 @@
+N1	N
+N2	N
+N3	N
+N4	N
+N5	N
+N6	N
+U1	U
+U2	U
+U3	U
+U4	U
+U5	U
+U6	U

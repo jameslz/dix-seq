@@ -1,0 +1,146 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my %metadata        =  ();
+profile();
+
+my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/primer_strip};
+
+my  $runs           =  qq{$project_home/runs};
+my  $report         =  qq{$project_home/report};
+my  $reads          =  qq{$project_home/reads};
+
+my  $mergepairs     =  qq{$metadata{project_home}/$metadata{project_id}/mergepairs/reads};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  @samples_t      =  ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+exit;
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    pcrsearch_run();
+    pcrsearch_report();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config ) || die "[ERR]: can't open $config $!\n";
+
+    while(<PROFILE>){
+
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+
+    } 
+
+    close PROFILE;
+
+    if(!exists $metadata{mapping_file}){
+        print STDERR qq{[ERR]: please specify the mapping_file data.!\n};
+        exit;
+    }
+
+    if(!exists $metadata{search_pcr_param}){
+        print STDERR qq{[ERR]: please specify the search_pcr_param.!\n};
+        exit;
+    }
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}})  || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+    
+    }
+    close PROFILE;
+  
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p   $report         \
+                            $runs           \
+                            $reads};
+       $cmd =~ s/\n\s+\s+/ /msg;
+    system $cmd;
+
+}
+
+sub pcrsearch_run {
+    
+    my $sh = qq{$runs/pcrsearch.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    foreach my $sample ( @samples_t ) {
+        
+        print EXPORT  pcrsearch( $sample );
+    
+    }
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p  $metadata{cpus} "{}"\n} if(!$dry_run);
+}
+
+sub pcrsearch {
+
+    my $sample  = shift;
+    my $cmd     = qq{$binaries/usearch                           \
+                        -search_pcr2 $mergepairs/$sample.fastq   \
+                        $metadata{search_pcr_param}              \
+                        -strand both                    \
+                        -maxdiffs 2                     \
+                        -tabbedout $reads/$sample.txt   \
+                        -fastqout  $reads/$sample.fastq \
+                        -log $reads/$sample.log ;\n};
+        $cmd    =~ s/\s+\n\s+/ /msg;
+    return $cmd;  
+
+}
+
+sub pcrsearch_report {
+
+    my $sh = qq{$runs/report.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+
+    print EXPORT pcrsearch_stats();    
+    close EXPORT;      
+   
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub pcrsearch_stats {
+    
+    my $cmd = qq{$utils/usearch-utils pcrsearch              \
+                     $metadata{mapping_file}                 \
+                     $reads                                  \
+                     >$report/pcrsearch.stats.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}

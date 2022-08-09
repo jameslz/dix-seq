@@ -1,0 +1,346 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )      = @ARGV;
+
+my %metadata       = ();
+profile();
+
+my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}/classify};
+
+my  $runs          = qq{$project_home/runs};
+my  $zotus         = qq{$project_home/zotus};
+my  $classify      = qq{$project_home/classify};
+my  $report        = qq{$project_home/report};
+
+my  $utils         =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
+my  $datasets      =  qq{$metadata{project_home}/$metadata{project_id}/zotu/report};
+my  $db            =  dirname( abs_path($0) ) . '/../db';
+
+my  $dry_run       =  0;
+    $dry_run       =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub submit {
+  
+  make_fs();
+  classify_run();
+  zotu_run();
+  biom_run();
+  norm_run();
+  stats_run();
+
+}
+
+sub profile {
+
+    open( PROFILE,  $config )  || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    } 
+    close PROFILE;
+
+    foreach my $db (qw/mapping_file db classifier/) {
+        if(! exists $metadata{$db}){
+            print STDERR "[ERR]: please specify the $db metadata.\n";
+            exit;
+        }
+    }
+
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p $classify         \
+                           $zotus           \
+                           $report          \
+                           $runs\n};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub classify_run {
+
+    my $sh = qq{$runs/classify.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT  classify();
+    print EXPORT  filter();
+
+    close EXPORT;    
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n};
+
+}
+
+sub classify {
+
+    my $cutoff  =  (exists $metadata{sintax_cutoff }) ? $metadata{sintax_cutoff} : '0.8';
+
+    my $cmd = qq{$binaries/usearch                        \
+                     -sintax $datasets/zotus.fasta        \
+                     -db $db/$metadata{db}.udb            \
+                     -strand plus                         \
+                     -sintax_cutoff $cutoff               \
+                     -tabbedout $classify/classify.txt    \
+                     -log $classify/classify.log          \
+                     -threads $metadata{cpus} ;\n};
+    
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd ;
+
+}
+
+sub filter {
+    
+    my $filter =  (exists $metadata{filter}) ? $metadata{filter} : 'NONE';
+
+    my $cmd = qq{$binaries/atlas-utils filter            \
+                    -r                                   \
+                    -t $filter                           \
+                    $classify/classify.txt               \
+                 2>$zotus/zotu_identifiers.txt           \
+                 1>$zotus/classify.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub zotu_run {
+
+    my $sh = qq{$runs/zotu.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT  subseq();
+    print EXPORT  subset();
+    print EXPORT  counts2freqs();
+    print EXPORT  annotation('zotu_table.txt', 'zotu_table_ann.txt');
+    print EXPORT  annotation('zotu_table_freqs.txt', 'zotu_table_freqs_ann.txt');
+    print EXPORT  flatten('zotu_table_ann.txt', 'zotu_table_flatten.txt');
+    print EXPORT  flatten('zotu_table_freqs_ann.txt', 'zotu_table_freqs_flatten.txt');
+    print EXPORT  hierarchy();
+    print EXPORT  hierarchy_freq();
+    print EXPORT  tsv2xlsx();
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+
+sub subseq {
+
+    my $cmd = qq{$binaries/fastx-utils subseq            \
+                   $datasets/zotus.fasta                 \
+                   $zotus/zotu_identifiers.txt           \
+                >$zotus/zotus.fasta ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub subset {
+
+    my $cmd = qq{$binaries/tsv-utils subset             \
+                   $datasets/zotu_table.txt             \
+                   $zotus/zotu_identifiers.txt          \
+                >$zotus/zotu_table.txt ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub counts2freqs {
+
+    my $cmd = qq{$binaries/atlas-utils  counts2freqs    \
+                    $zotus/zotu_table.txt               \
+                >$zotus/zotu_table_freqs.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+}
+
+sub annotation {
+    
+    my ($table, $ann) = @_;
+    my $cmd = qq{cut -f1,4 $zotus/classify.txt         \
+                | $binaries/atlas-utils annotation     \
+                    - $zotus/$table                    \
+                >$zotus/$ann ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub flatten {
+    
+    my ($table, $ann) = @_;
+    my $cmd = qq{$binaries/atlas-utils flatten        \
+                       $zotus/$table                  \
+                >$zotus/$ann ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub hierarchy {
+
+    my $cmd = qq{$binaries/atlas-utils hierarchy        \
+                   -r                                   \
+                   $zotus/zotu_table_ann.txt            \
+                >$zotus/zotu_table.hierarchy.txt ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub hierarchy_freq {
+
+    my $cmd = qq{$binaries/atlas-utils hierarchy        \
+                   $zotus/zotu_table_freqs_ann.txt      \
+                >$zotus/zotu_table.freqs.hierarchy.txt ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub tsv2xlsx {
+
+    my $cmd = qq{$binaries/tsv-utils tsv2xlsx              \
+                   $zotus/zotu_table.xlsx                  \
+                   otu_table:$zotus/zotu_table.txt         \
+                   otu_table_ann:$zotus/zotu_table_ann.txt \
+                   otu_table_freqs:$zotus/zotu_table_freqs.txt  \
+                   otu_table_freqs_ann:$zotus/zotu_table_freqs_ann.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub biom_run {
+
+    my $sh = qq{$runs/biom.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT  convert();
+    print EXPORT  summarize();
+    print EXPORT  zstats();
+    
+    close EXPORT;  
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub convert {
+
+    my $cmd = qq{biom convert                      \
+                    -i $zotus/zotu_table_ann.txt   \
+                    -o $zotus/zotu_table.biom      \
+                    --table-type "OTU table"       \
+                    --to-json                      \
+                    --process-obs-metadata taxonomy ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub summarize {
+  
+    my $cmd = qq{biom summarize-table              \
+                  -i $zotus/zotu_table.biom        \
+                  -o $zotus/zotu_summary.txt\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub zstats {
+
+    my $cmd = qq{$binaries/atlas-utils summary     \
+                    $zotus/zotu_table.txt          \
+                 |$binaries/tsv-utils transpose -  \
+                 >$report/zotu.stats.txt; \n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub norm_run {
+
+    my $sh = qq{$runs/rare.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT  rare();
+    print EXPORT  annotation('zotu_table_norm.txt', 'zotu_table_norm_ann.txt');
+    print EXPORT  flatten('zotu_table_norm_ann.txt', 'zotu_table_norm_flatten.txt');
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub rare {
+
+    my $sample_size = `$binaries/atlas-utils min_size $zotus/zotu_table.txt`;
+    my $cmd = qq{$binaries/usearch                           \
+                   -otutab_rare  $zotus/zotu_table.txt       \
+                   -sample_size  $sample_size                \
+                   -output $zotus/zotu_table_norm.txt; \n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub stats_run {
+
+    my $sh = qq{$runs/stats.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $!";
+    
+    print EXPORT  stats();
+    print EXPORT  simplify();
+
+    close EXPORT;    
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub stats {
+
+    my $project = qq{$metadata{project_home}/$metadata{project_id}};
+    my $cmd = qq{$binaries/tsv-utils join                             \
+                   $project/trimming/report/trimming.stats.txt        \
+                   $project/mergepairs/report/mergepairs.stats.txt    \
+                   $project/primer_strip/report/pcrsearch.stats.txt   \
+                   $project/classify/report/zotu.stats.txt            \
+                |$binaries/tsv-utils cut -d -f6,9   -                 \
+                |$binaries/tsv-utils add_headline                     \
+                    \"#label\\tTrimmomatic\\t\\t\\t\\tmergepairs\\t\\tprimer_match\\t\\t\\t\\t\\tZotu\\t\" \
+                    -                                                 \
+                >$report/sample.stats.long.txt ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}
+
+sub simplify {
+
+    my $cmd = qq{cut -f1,2,6,8,13                      \
+                     $report/sample.stats.long.txt     \
+                |grep -v "catalog"                     \
+                >$report/sample.stats.short.txt ;\n};
+       $cmd =~ s/\s+\n\s+/  /msg;
+    return $cmd;
+
+}

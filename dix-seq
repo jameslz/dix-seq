@@ -1,0 +1,372 @@
+#!/usr/bin/perl  -w
+
+use strict;
+use warnings;
+use Switch;
+use File::Basename;
+use Cwd 'abs_path';
+
+my $usage = qq{
+Usage: dix-seq  <metadata> <cmd>
+
+Commands
+  -- reads preparation
+     trimming               trim low quality base and adaptor sequence.
+     mergepairs             merege paired reads.
+     primer_strip           remove primer sequence from merged reads.
+
+  -- denoise/construct zotu table
+     zotu                   construct zotu table using denoised reads.
+     classify               predict reads taxonomy.
+
+  -- taxonomy analaysis
+     taxonomy               summary report for  reads classification.
+
+  -- diversity analaysis
+     phylogeny              construct phylogenetic tree using picrust2.
+     alpha                  alpha diversity metric(s) from zOTU table.
+     beta                   beta diversity metric(s) from zOTU table.
+                            and PCA/PCoA/NMDS analaysis.
+  -- misc analaysis
+     rank_abundance         rank_abundance plot
+     specaccum_curve        specaccum curve plot
+
+  -- workflow
+     pipeline               basic amplicon data analays workflow.
+
+  -- functional composition analysis
+     picrust2               predict function composition using picrust2.
+     kegg                   KEGG functional space from picrust2 predict.
+     function_wf            microbiome functional composition analysis
+ 
+  --DA analaysis
+     anosim                 significant difference test between groups.
+     DESeq2                 taxonomy feature significant difference between groups.
+     lefse                  taxonomy feature significant difference between groups using LDA.
+     wilcoxon_rank_sum      feature significant difference between groups using wilcoxon rank sum test.
+                            support: taxonomy|kegg|picrust2
+     kruskal_wallis         feature significant difference between groups using kruskal wallis test.
+                            support: taxonomy|kegg|picrust2
+
+     kruskal_wallis_wf      workflow for taxonomy|kegg|picrust2
+     wilcoxon_rank_sum_wf   workflow for taxonomy|kegg|picrust2
+
+  -- workflow
+     advanced               advanced amplicon data analays workflow.
+    
+  -- report
+     summarize              report the summarize data.
+     report                 report with Rmarkdown
+
+  -- auxiliary 
+     validate               check metadata parameters.
+
+Examples:
+    dix-seq  metadata.txt  mergepairs
+    dix-seq  metadata.txt  pipeline
+    dix-seq  metadata.txt  advanced
+    dix-seq  metadata.txt  summarize
+    dix-seq  metadata.txt  pipeline,function_wf,advanced,summarize,report
+
+version: 0.0.7
+
+Licenced:
+(c) 2019-2022 - LEI ZHANG
+Logic Informatics Co.,Ltd.
+zhanglei\@logicinformatics.com
+
+};
+
+if(@ARGV < 2){ print $usage; exit}
+
+my $bins     =   dirname($0) . "/bins";
+my $metadata =   abs_path( (shift @ARGV) );
+my $cmd      =   shift @ARGV;
+my $options  =   ' ';
+   $options  =   join(" ", @ARGV) if(@ARGV > 0 );
+
+my %metadata = ();
+profiling();
+my $home     =   $metadata{project_home};
+my $logs     =   qq{$home/logs};
+
+open (EXPORT, qq{>$home/run.sh}) || die "$!";
+
+my $fh = *EXPORT;
+
+switch($cmd){
+
+
+    case 'trimming'              {print EXPORT trimming();}
+    case 'mergepairs'            {print EXPORT mergepairs();}
+    case 'primer_strip'          {print EXPORT primer_strip();}
+    case 'zotu'                  {print EXPORT zotu();}
+    case 'classify'              {print EXPORT classify();}
+    case 'taxonomy'              {print EXPORT taxonomy();}
+    case 'phylogeny'             {print EXPORT phylogeny();}
+    case 'alpha'                 {print EXPORT alpha();}
+    case 'beta'                  {print EXPORT beta();}
+    case 'rank_abundance'        {print EXPORT rank_abundance();}
+    case 'specaccum_curve'       {print EXPORT specaccum_curve();}
+    case 'pipeline'              {print EXPORT pipeline();}
+    case 'lefse'                 {print EXPORT lefse();}
+    case 'wilcoxon_rank_sum'     {print EXPORT wilcoxon_rank_sum();}
+    case 'kruskal_wallis'        {print EXPORT kruskal_wallis();}
+    case 'wilcoxon_rank_sum_wf'  {print EXPORT wilcoxon_rank_sum_wf();}
+    case 'kruskal_wallis_wf'     {print EXPORT kruskal_wallis_wf();}
+    case 'anosim'                {print EXPORT anosim();}
+    case 'DESeq2'                {print EXPORT DESeq2();}
+    case 'picrust2'              {print EXPORT picrust2();}
+    case 'kegg'                  {print EXPORT kegg();}
+    case 'function_wf'           {print EXPORT function_wf();}
+
+    case 'advanced'              {print EXPORT advanced();}
+    case 'summarize'             {print EXPORT summarize();}
+    case 'report'                {print EXPORT report();}
+    case 'validate'              {print EXPORT validate();}
+    else                         {combine( $fh )};
+
+}
+
+print EXPORT  utils();
+close EXPORT;
+
+system( qq{mkdir -p $logs/{kruskal_wallis,wilcoxon_rank_sum} && bash $home/run.sh} );
+
+exit;
+
+sub profiling {
+
+    open( PROFILE,  $metadata )   || die "[ERR]: can't open $metadata. \n";
+    while(<PROFILE>){
+          $_ =~ s/\s+$//;
+          next if(/^#/ || !/^\S+/);
+          my ($key, $value)  = $_ =~ /^(\S+)\s+(.+)/;
+          next if($value eq '-');
+          $metadata{$key}  = $value;
+    } 
+    close PROFILE;
+
+}
+
+sub utils {
+
+    my $utils = qq{if [ -f  "$home/run.sh" ]; then rm "$home/run.sh"; fi\n};
+    return $utils;
+
+}
+
+sub trimming {
+    my $cmd = qq{$bins/trimming $metadata  &>$logs/trimming.txt ;\n};
+    return $cmd;
+}
+
+sub mergepairs {
+    my $cmd = qq{$bins/mergepairs $metadata &>$logs/mergepairs.txt ;\n};
+    return $cmd;
+}
+
+sub primer_strip {
+    my $cmd = qq{$bins/primer_strip $metadata &>$logs/primer_strip.txt ;\n};
+    return $cmd;
+}
+
+sub zotu {
+    my $cmd = qq{$bins/zotu $metadata &>$logs/zotu.txt ;\n};
+    return $cmd;
+}
+
+sub classify {
+    my $cmd = qq{$bins/classify $metadata &>$logs/classify.txt ;\n};
+    return $cmd;
+}
+
+sub taxonomy {
+    my $cmd = qq{$bins/taxonomy $metadata &>$logs/taxonomy.txt ;\n};
+    return $cmd;
+}
+
+sub phylogeny {
+    my $cmd = qq{$bins/phylogeny $metadata &>$logs/phylogeny.txt ;\n};
+    return $cmd;
+}
+
+sub alpha {
+    my $cmd = qq{$bins/alpha $metadata &>$logs/alpha.txt ;\n};
+    return $cmd;
+}
+
+sub beta {
+    my $cmd = qq{$bins/beta $metadata &>$logs/beta.txt ;\n};
+    return $cmd;
+}
+
+sub rank_abundance {
+    my $cmd = qq{$bins/rank_abundance $metadata &>$logs/rank_abundance.txt ;\n};
+    return $cmd;
+}
+
+sub specaccum_curve {
+    my $cmd = qq{$bins/specaccum_curve $metadata &>$logs/specaccum_curve.txt ;\n};
+    return $cmd;
+}
+
+sub anosim {
+    my $cmd = qq{$bins/anosim $metadata &>$logs/anosim.txt ;\n};
+    return $cmd;
+}
+
+sub DESeq2 {
+    my $cmd = qq{$bins/DESeq2 $metadata &>$logs/DESeq2.txt ;\n};
+    return $cmd;
+}
+
+sub lefse {
+    my $cmd = qq{$bins/lefse $metadata &>$logs/lefse.txt ;\n};
+    return $cmd;
+}
+
+sub kruskal_wallis {
+
+   my @cmds    = ();
+   $options = 'taxonomy' if($options eq " ");
+
+   foreach my $t (split /,/, $options) {
+       my $cmd =  qq{$bins/kruskal_wallis -d $t $metadata &>$logs/kruskal_wallis/$t.txt ;\n};
+       push @cmds, $cmd;
+   } 
+   return join("", @cmds);
+
+}
+
+sub kruskal_wallis_wf {
+    
+    my @cmds = ();
+
+    foreach my $p (split /,/, "taxonomy,picrust2,kegg") {
+       push @cmds, qq{$bins/kruskal_wallis -d $p $metadata &>$logs/kruskal_wallis/$p.txt ;\n};
+    }
+
+    return join("", @cmds);
+}
+
+sub wilcoxon_rank_sum {
+
+   my @cmds    = ();
+   $options = 'taxonomy' if($options eq " ");
+
+   foreach my $t (split /,/, $options) {
+       my $cmd =  qq{$bins/wilcoxon_rank_sum -d $t $metadata &>$logs/wilcoxon_rank_sum/$t.txt ;\n};
+       push @cmds, $cmd;
+   } 
+   return join("", @cmds);
+
+}
+
+sub wilcoxon_rank_sum_wf {
+    
+    my @cmds = ();
+
+    foreach my $p (split /,/, "taxonomy,picrust2,kegg") {
+       push @cmds, qq{$bins/wilcoxon_rank_sum -d $p $metadata &>$logs/wilcoxon_rank_sum/$p.txt ;\n};
+    }
+
+    return join("", @cmds);
+}
+
+sub picrust2 {
+    my $cmd = qq{$bins/picrust2 $metadata &>$logs/picrust2.txt ;\n};
+    return $cmd;
+}
+
+sub kegg {
+    my $cmd = qq{$bins/kegg $metadata &>$logs/kegg.txt ;\n};
+    return $cmd;
+}
+
+sub function_wf {
+    
+    my @cmds = ();
+
+    foreach my $p (split /,/, "picrust2,kegg") {
+       push @cmds, qq{$bins/$p $metadata &>$logs/$p.txt ;\n};
+    }
+
+    return join("", @cmds);
+}
+
+sub summarize {
+    my $cmd = qq{$bins/summarize $metadata &>$logs/summarize.txt ;\n};
+    return $cmd;
+}
+
+sub report {
+    my $cmd = qq{$bins/report $metadata &>$logs/report.txt ;\n};
+    return $cmd;
+}
+
+sub validate {
+    my $cmd = qq{$bins/validate $metadata ;\n};
+    return $cmd;
+}
+
+sub pipeline {
+        
+    my @cmds = ();
+    foreach my $p (split /,/, "trimming,mergepairs,primer_strip,zotu,classify,taxonomy,phylogeny,alpha,beta,rank_abundance,specaccum_curve") {
+       push @cmds, qq{$bins/$p $metadata &>$logs/$p.txt ;\n};
+    }
+
+   return join("", @cmds);
+}
+
+sub advanced {
+        
+    my @cmds = ();
+    foreach my $p (split /,/, "anosim,DESeq2,lefse") {
+       push @cmds, qq{$bins/$p $metadata &>$logs/$p.txt ;\n};
+    }
+
+    foreach my $p (split /,/, "taxonomy,picrust2,kegg") {
+       push @cmds, qq{$bins/kruskal_wallis -d $p $metadata &>$logs/kruskal_wallis/$p.txt ;\n};
+       push @cmds, qq{$bins/wilcoxon_rank_sum -d $p $metadata &>$logs/wilcoxon_rank_sum/$p.txt ;\n};
+    }
+
+    return join("", @cmds);
+}
+
+sub combine {
+    
+    my $fh = shift;
+    foreach my  $it (split /,/, $cmd) {
+        switch( $it ){
+            case 'trimming'             {print $fh trimming();}
+            case 'mergepairs'           {print $fh mergepairs();}
+            case 'primer_strip'         {print $fh primer_strip();}
+            case 'zotu'                 {print $fh zotu();}
+            case 'classify'             {print $fh classify ();}
+            case 'taxonomy'             {print $fh taxonomy();}
+            case 'phylogeny'            {print $fh phylogeny();}
+            case 'alpha'                {print $fh alpha();}
+            case 'beta'                 {print $fh beta();}
+            case 'rank_abundance'       {print $fh rank_abundance();}
+            case 'specaccum_curve'      {print $fh specaccum_curve();}
+            case 'anosim'               {print $fh anosim();}
+            case 'DESeq2'               {print $fh DESeq2();}
+            case 'picrust2'             {print $fh picrust2();}
+            case 'kegg'                 {print $fh kegg();}
+            case 'function_wf'          {print $fh function_wf();}
+            case 'wilcoxon_rank_sum'    {print $fh wilcoxon_rank_sum();}
+            case 'wilcoxon_rank_sum_wf' {print $fh wilcoxon_rank_sum();}
+            case 'kruskal_wallis'       {print $fh kruskal_wallis();}
+            case 'kruskal_wallis_wf'    {print $fh kruskal_wallis();}
+            case 'pipeline'             {print $fh pipeline();}
+            case 'advanced'             {print $fh advanced();}
+            case 'summarize'            {print $fh summarize();}
+            case 'report'               {print $fh report();}
+            case 'validate'             {print $fh validate();}
+            else                        {warn "No such '$cmd' CMD!\n"; exit(0)};
+
+        }
+    }
+}

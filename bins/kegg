@@ -1,0 +1,250 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use File::Basename;
+use Cwd 'abs_path';
+
+die "Usage:perl $0 <metadata>" if(@ARGV != 1);
+
+my ($config )       = @ARGV;
+
+my  %metadata       = ();
+profile();
+
+my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/kegg};
+
+my  $runs           = qq{$project_home/runs};
+my  $annotation     = qq{$project_home/annotation};
+my  $report         = qq{$project_home/report};
+
+my  $utils          =  dirname( abs_path($0) ) . '/../utils';
+my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
+my  $picrust2       =  qq{$metadata{project_home}/$metadata{project_id}/picrust2};
+my  $db             =  dirname( abs_path($0) ) . '/../db/kegg';
+
+my  %catalog_h      =  ();
+my  @samples_t      =  ();
+
+my  $dry_run        =  0;
+    $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
+
+submit();
+
+exit;
+
+sub profile {
+
+    open( PROFILE,  $config ) || die "[ERR]: can't open $config $!\n";
+    while(<PROFILE>){
+       
+        $_ =~ s/\s+$//;  
+        next if(/^#/ || !/^\S+/);
+        my ($key, $value)  = split /\s+/, $_, 2;
+        $metadata{ $key } = $value;
+    
+    } 
+    close PROFILE;
+
+}
+
+sub mapping_file {
+
+    open (PROFILE, qq{$metadata{mapping_file}}) || die "[ERR]: can't open $metadata{mapping_file} $!\n";
+    while (<PROFILE>) {
+        
+        $_ =~ s/\s+$//;  
+        next if (/^#/ || /^$/);
+        my @its = split /\s+/, $_;
+        push @samples_t, $its[0];
+        $catalog_h{ $its[-1] } = ();
+    
+    }
+    close PROFILE;
+
+}
+
+sub submit {
+
+    mapping_file();
+    make_fs();
+    brite_run();
+    mdr_run();
+    summary_run();
+
+}
+
+sub make_fs {
+    
+    my $cmd = qq{mkdir -p $runs         \
+                          $annotation   \
+                          $report};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub brite_run {
+
+    my $sh = qq{$runs/brite.sh};
+
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    print EXPORT qq{$binaries/tsv-utils strip $metadata{mapping_file} | cut -f1,2 | grep -v '#' >$report/metadata.txt;\n};
+    print EXPORT matrix();
+    
+    foreach my $ontology (qw/module pathway catalog/) {
+       print EXPORT   kann( $ontology );
+    }
+    
+    print EXPORT  levels();
+    
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub matrix {
+    
+    my $cmd = qq{gunzip -c                      \
+                     $picrust2/pipeline/KO_metagenome_out/pred_metagenome_unstrat.tsv.gz \
+                 |$binaries/tsv-utils view -c - \
+                 >$report/ko.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub kann {
+   
+    my $ontology= shift;
+    my $cmd     = qq{$binaries/atlas-utils  kann       \
+                        $db/ko-$ontology.txt           \
+                        $report/ko.txt                 \
+                    |$binaries/tsv-utils definition    \
+                        -d " "                         \
+                        $db/$ontology-definition.txt   \
+                        -                              \
+                    >$annotation/$ontology.txt\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub levels {
+   
+    my $cmd = qq{$binaries/atlas-utils  kann       \
+                    $db/ko-pathway.txt             \
+                    $report/ko.txt                 \
+                |sed  's/#catalog/#pathway/'       \
+                |$binaries/left-join               \
+                    $db/pathway-levels.txt  -      \
+                >$report/pathway-levels.txt \n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd; 
+
+}
+
+sub mdr_run {
+    
+    my $sh = qq{$runs/mdr.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    
+    my @ontologies_t = qw/module pathway catalog/;
+ 
+    foreach my $ontology (@ontologies_t) {
+
+        print EXPORT qq{mkdir -p $annotation/$ontology ;\n};
+        print EXPORT pca( $ontology );
+        print EXPORT pdf2png('pca', $ontology);
+        print EXPORT pcoa( $ontology );
+        print EXPORT pdf2png('pcoa', $ontology);
+        print EXPORT nmds( $ontology );
+        print EXPORT pdf2png('nmds', $ontology);
+
+    }
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 7 -p $metadata{parallel} "{}"\n} if(!$dry_run);
+
+}
+
+sub pdf2png {
+
+   my ($type, $ontology) = @_;
+   my $cmd  = qq{$utils/pdf2png \
+                   $annotation/$ontology/$ontology.$type.pdf ;\n};
+      $cmd =~ s/\s+\n\s+/ /msg;
+  return $cmd; 
+
+}
+
+sub pca {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $cmd     = qq{$utils/PCA.R                    \
+                        $ellipse_para                \
+                        $text_para                   \
+                        $annotation/$ontology.txt    \
+                        $report/metadata.txt         \
+                        $annotation/$ontology/$ontology.pca.pdf;\n};
+        $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub pcoa {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $method       =  (exists $metadata{vegdist}) ? $metadata{vegdist} : "bray";
+    my $cmd     = qq{$utils/PCoA.R                      \
+                        $ellipse_para                   \
+                        $text_para                      \
+                        -m $method                      \
+                        $annotation/$ontology.txt       \
+                        $report/metadata.txt            \
+                        $annotation/$ontology/$ontology.pcoa.pdf;\n};
+        $cmd =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub nmds {
+
+    my $ontology     = shift;
+    my $ellipse_para =  ( (scalar @samples_t) ne (scalar keys %catalog_h) ) ? '-g T' : " ";
+    my $text_para    =  (exists $metadata{text} && $metadata{text} eq 'T') ? "-t T" : " ";
+    my $method       =  (exists $metadata{vegdist}) ? $metadata{vegdist} : "bray";
+    my $cmd     = qq{$utils/NMDS.R                      \
+                        $ellipse_para                   \
+                        $text_para                      \
+                        -m $method                      \
+                        $annotation/$ontology.txt       \
+                        $report/metadata.txt            \
+                        $annotation/$ontology/$ontology.nmds.pdf;\n};
+       $cmd     =~ s/\s+\n\s+/ /msg;
+     return $cmd; 
+
+}
+
+sub summary_run {
+    
+    my $sh = qq{$runs/summary.sh};
+    open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
+    print EXPORT summary();
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
+
+}
+
+sub summary {
+
+    my @ontologies_t = qw/module pathway catalog/;
+    my $list = join(" ", ( map { qq{$_:$annotation/$_.txt} } @ontologies_t) );
+    my $cmd  = qq{$binaries/tsv-utils tsv2xlsx $report/picrust2.kegg.xlsx $list ;\n};
+    return $cmd;
+
+}

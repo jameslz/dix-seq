@@ -1,0 +1,203 @@
+#!/usr/bin/perl -w
+
+use strict;
+use warnings;
+use Getopt::Std;
+use File::Basename;
+use Cwd 'abs_path';
+
+my $version = "0.0.2";
+
+my %opts = (q =>'0.05',
+            r =>'0.001',
+            t => 40);
+
+getopts('q:t:r:p', \%opts);
+
+&usage if (-t STDIN && @ARGV != 3);
+
+my  $query          =  shift @ARGV;
+my  $mapping_file   =  shift @ARGV;
+my  $project_home   =  abs_path(shift @ARGV);
+
+my  $runs           =  qq{$project_home/runs};
+my  $data           =  qq{$project_home/data};
+my  $report         =  qq{$project_home/report};
+
+my  $binaries       =  dirname( abs_path($0) ) . '/binaries';
+my  $utils          =  dirname( abs_path($0) ) . '/utils';
+
+my  $qval           =  $opts{q};
+my  $cpus           =  $opts{t};
+my  $rowsum         =  $opts{r};
+my  @elements_t     =  ();
+my  $c              =  ($opts{p}) ? -2 : -1;
+
+submit();
+exit;
+
+sub submit{
+
+    make_fs();
+    validate_run();
+    kwt_run();
+    violin_run();
+
+}
+
+sub make_fs {
+
+    my $cmd = qq{mkdir -p  $runs $data $report/violin};
+       $cmd =~ s/\n\s+/ /msg;
+    system $cmd;
+
+}
+
+sub validate_run {
+
+    my $sh    =  qq{$runs/validate.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    print EXPORT validate();
+    print EXPORT subset();
+
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub validate {
+
+    my $cmd  = qq{$binaries/validate               \
+                    $mapping_file $query           \
+                  1>$data/metadata.txt             \
+                  2>$data/validate.txt ;\n};
+       $cmd  =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub subset {
+
+    my $cmd =  qq{cut -f1 $data/metadata.txt       \
+                  |$binaries/tsv-utils subcolumn   \
+                    -r $query -                    \
+                  |$binaries/text-clean -          \
+                  |grep -v -P ^"Above_"            \
+                  |$binaries/tsv-utils trim        \
+                    - $rowsum                      \
+                  >$data/data.txt; \n};
+       $cmd =~ s/\s+\n\s+/ /msg; 
+    return $cmd;
+
+}
+
+sub kwt_run {
+
+    my $sh    =  qq{$runs/kwt.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+
+    print EXPORT kwt();
+
+    close EXPORT;
+    system qq{bash $sh};
+
+}
+
+sub kwt {
+
+    my $cmd = qq{$utils/Kruskal-Wallis.R             \
+                    $data/data.txt                   \
+                    $data/metadata.txt               \
+                    $report/Kruskal-Wallis.txt ;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+   return $cmd;
+
+}
+
+sub violin_run {
+
+    my $sh = qq{$runs/violin.sh};
+    open (EXPORT, ">$sh") || die "[ERR]: can't open $sh $!\n";
+    
+    elements_tabs();
+
+    foreach my $f ( @elements_t ) {
+       print EXPORT feature_tab( $f );
+       print EXPORT violin( $f );
+       print EXPORT pdf2png( $f );
+    }
+
+    close EXPORT;
+    system qq{cat $sh | $binaries/gargs -v --nlines 3 -p $cpus "{}"\n};
+
+}
+
+sub elements_tabs {
+
+    open( PROFILE,  qq{$report/Kruskal-Wallis.txt} )   || die "[ERR]: can't open $report/Kruskal-Wallis.txt \n";
+    <PROFILE>;
+    while(<PROFILE>){
+
+        $_=~s/\s+$//;        
+        my @t = split /\t/, $_;    
+        next if( $t[$c] > $qval); 
+        push @elements_t, $t[0];
+
+    } 
+    close PROFILE;
+
+}
+
+sub feature_tab {
+
+    my $f   = shift;
+    my $cmd = qq{$binaries/tsv-utils subset         \
+                    -k -c 1                         \
+                    $data/data.txt                  \
+                    $f                              \
+                >$report/violin/$f.txt;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+sub violin {
+
+    my $f   = shift;
+    my $cmd = qq{$utils/Violin.R                    \
+                    $report/violin/$f.txt           \
+                    $data/metadata.txt              \
+                    $report/violin/$f.pdf           \
+                    $f;\n};
+       $cmd =~ s/\s+\n\s+/ /msg;
+    return $cmd;
+
+}
+
+
+sub pdf2png{
+
+    my $f   = shift;
+    my $cmd = qq{$utils/pdf2png $report/violin/$f.pdf;\n};
+    return $cmd;   
+
+}
+
+sub usage {
+
+  printf STDERR qq(
+
+Program: kwt-kit: Kruskal-Wallis test analysis.
+Version: $version
+Contact: ZHANG LEI <zhanglei\@logictek.cn>\n
+Usage:   kwt-tk <feature_tab> <mapping_file> <project>\n
+Options: -t INT   cpus for parallel, default: [40]
+         -q INT   Pval/Padj cutoff for stats visualization, default: [0.05]
+         -r FLOAT remove features rowsum cutoff, default: [0.001]
+         -p       use Pvalue replace Padj.
+
+);
+exit;
+
+}
