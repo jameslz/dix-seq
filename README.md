@@ -44,4 +44,5 @@ apptainer exec dix-seq-1.0.0.sif dix-seq metadata.txt pipeline
 ### 4. misc
 
 [Step By Step Data Analysis For Amplicon Sequencing Data](https://github.com/jameslz/dix-seq/wiki/Step-By-Step-Data-Analysis-For-Amplicon-Sequencing-Data)
+
 [Dix-seq: 扩增子数据分析工作流使用说明](https://logictek.feishu.cn/docx/GzcbdKEs0oBF2dx4avDcaiz3n6d)
