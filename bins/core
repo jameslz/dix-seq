@@ -12,13 +12,13 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my $project_home    = qq{$metadata{project_home}/$metadata{project_id}/core};
+my $project_home    =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/core};
 
-my $distmx          = qq{$project_home/distmx};
-my $runs            = qq{$project_home/runs};
-my $report          = qq{$project_home/report};
+my $distmx          =  qq{$project_home/distmx};
+my $runs            =  qq{$project_home/runs};
+my $report          =  qq{$project_home/report};
  
-my $datasets        =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my $datasets        =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my $utils           =  dirname( abs_path($0) ) . '/../utils';
 my $binaries        =  dirname( abs_path($0) ) . '/../binaries';
@@ -78,7 +78,7 @@ sub core_run {
 
 sub calc_distmx {
  
-  my $cmd   = qq{$binaries/usearch                                \
+  my $cmd   = qq{usearch                                          \
                     -calc_distmx $datasets/zotus.fasta            \
                     -tabbedout $distmx/distmx.txt                 \
                     -maxdist 0.2 -termdist 0.3  ;\n};
@@ -100,7 +100,7 @@ sub taxonomy {
 
 sub otutab_core {
 
-  my $cmd   = qq{$binaries/usearch                               \
+  my $cmd   = qq{usearch                                         \
                     -otutab_core $datasets/zotu_table_norm.txt   \
                     -distmxin $distmx/distmx.txt                 \
                     -sintaxin $report/classify.txt               \

@@ -12,7 +12,7 @@ my ($config )       =  @ARGV;
 my %metadata        =  ();
 profile();
 
-my $project_home    =  qq{$metadata{project_home}/$metadata{project_id}/alpha};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/alpha};
 
 my $runs            =  qq{$project_home/runs};
 my $diversity       =  qq{$project_home/diversity};
@@ -20,8 +20,8 @@ my $rarefaction     =  qq{$project_home/rarefaction};
 my $octave          =  qq{$project_home/octave};
 my $report          =  qq{$project_home/report};
 
-my $datasets        =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
-my $distmx          =  qq{$metadata{project_home}/$metadata{project_id}/distmx/report};
+my $datasets        =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
+my $distmx          =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/distmx/report};
 
 my $utils           =  dirname( abs_path($0) ) . '/../utils';
 my $binaries        =  dirname( abs_path($0) ) . '/../binaries';
@@ -117,7 +117,7 @@ sub alpha_run {
 sub alpha {
 
     my $sample  = shift;
-    my $cmd     = qq{$binaries/usearch                             \
+    my $cmd     = qq{usearch                                       \
                         -alpha_div $datasets/zotu_table.txt        \
                         -output $diversity/alpha.long.txt;\n};
         $cmd     =~ s/\s+\n\s+/ /msg;

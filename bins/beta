@@ -12,19 +12,19 @@ my ($config )      = @ARGV;
 my  %metadata      = ();
 profile();
 
-my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}};
+my  $project_home  =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
-my  $beta          = qq{$project_home/beta};
-my  $upgma         = qq{$beta/upgma};
-my  $runs          = qq{$beta/runs};
-my  $distmx        = qq{$beta/distmx};
-my  $pca           = qq{$beta/pca};
-my  $pcoa          = qq{$beta/pcoa};
-my  $nmds          = qq{$beta/nmds};
-my  $report        = qq{$beta/report};
+my  $beta          =  qq{$project_home/beta};
+my  $upgma         =  qq{$beta/upgma};
+my  $runs          =  qq{$beta/runs};
+my  $distmx        =  qq{$beta/distmx};
+my  $pca           =  qq{$beta/pca};
+my  $pcoa          =  qq{$beta/pcoa};
+my  $nmds          =  qq{$beta/nmds};
+my  $report        =  qq{$beta/report};
 
-my  $freq          = qq{$metadata{project_home}/$metadata{project_id}/taxonomy/bars};
-my  $dataset       = qq{$metadata{project_home}/$metadata{project_id}/phylogeny/report};
+my  $freq          =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/taxonomy/bars};
+my  $dataset       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/phylogeny/report};
 
 my  $utils         =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
@@ -109,7 +109,7 @@ sub distmx_run {
 sub distmx {
     
     my $mx   =  (-e qq{$dataset/zotus.tree}) ? qq{-tree $dataset/zotus.tree} : " ";
-    my $cmd  = qq{$binaries/usearch                       \
+    my $cmd  = qq{usearch                                 \
                    -beta_div $dataset/zotu_table_norm.txt \
                    -filename_prefix $distmx/              \
                    $mx                                    \
@@ -124,8 +124,8 @@ sub draw_tree {
     
     my $metric  = shift;
     
-    my $cmd = qq{$binaries/usearch                      \
-                   -draw_tree $distmx/$metric.tree      \
+    my $cmd = qq{usearch                                 \
+                   -draw_tree $distmx/$metric.tree       \
                    -output    $distmx/$metric.tree.txt ;\n};
 
        $cmd =~ s/\s+\n\s+/ /msg;

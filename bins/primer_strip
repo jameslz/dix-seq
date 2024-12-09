@@ -7,18 +7,18 @@ use Cwd 'abs_path';
 
 die "Usage:perl $0 <metadata>" if(@ARGV != 1);
 
-my ($config )       = @ARGV;
+my ($config)        = @ARGV;
 
 my %metadata        =  ();
 profile();
 
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/primer_strip};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/primer_strip};
 
 my  $runs           =  qq{$project_home/runs};
 my  $report         =  qq{$project_home/report};
 my  $reads          =  qq{$project_home/reads};
 
-my  $mergepairs     =  qq{$metadata{project_home}/$metadata{project_id}/mergepairs/reads};
+my  $mergepairs     =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/mergepairs/reads};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
@@ -109,7 +109,7 @@ sub pcrsearch_run {
 sub pcrsearch {
 
     my $sample  = shift;
-    my $cmd     = qq{$binaries/usearch                           \
+    my $cmd     = qq{usearch                            \
                         -search_pcr2 $mergepairs/$sample.fastq   \
                         $metadata{search_pcr_param}              \
                         -strand both                    \

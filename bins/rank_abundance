@@ -12,12 +12,12 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/rank_abundance};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/rank_abundance};
 
-my  $report         = qq{$project_home/report};
-my  $runs           = qq{$project_home/runs};
+my  $report         =  qq{$project_home/report};
+my  $runs           =  qq{$project_home/runs};
 
-my  $datasets       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';

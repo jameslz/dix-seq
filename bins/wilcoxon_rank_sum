@@ -18,9 +18,9 @@ my  %metadata       = ();
 profiling();
 
 my  $db             =  $opts{d};
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
-my  $wilcox_rank_sum =  qq{$project_home/wilcox_rank_sum/$db};
+my  $wilcox_rank_sum = qq{$project_home/wilcox_rank_sum/$db};
 my  $profiles       =  qq{$wilcox_rank_sum/profiles};
 my  $runs           =  qq{$wilcox_rank_sum/runs};
 my  $report         =  qq{$wilcox_rank_sum/report};
@@ -59,7 +59,7 @@ sub submit {
 
 sub set_para {
 
-    my  $fp    = qq{$metadata{project_home}/$metadata{project_id}};
+    my  $fp    = abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
     switch($db){   
       case 'taxonomy'     { $datasets   =  qq{$project_home/taxonomy/classify}}

@@ -12,13 +12,13 @@ my ($config)        = @ARGV;
 my  %metadata       = ();
 profiling();
 
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/mergepairs};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/mergepairs};
 
 my  $runs           =  qq{$project_home/runs};
 my  $report         =  qq{$project_home/report};
 my  $reads          =  qq{$project_home/reads};
 
-my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/trimming/reads};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/trimming/reads};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
@@ -112,7 +112,7 @@ sub mergepairs_run {
 sub mergepairs {
 
     my $sample   = shift;
-    my $cmd = qq{$binaries/usearch                                          \
+    my $cmd = qq{usearch                                                    \
                        -fastq_mergepairs $datasets/$sample\_1.fastq         \
                        -reverse $datasets/$sample\_2.fastq                  \
                        -fastqout $reads/$sample.fastq                       \

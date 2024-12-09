@@ -7,21 +7,21 @@ use Cwd 'abs_path';
 
 die "Usage:perl $0 <metadata>" if(@ARGV != 1);
 
-my ($config )       = @ARGV;
+my ($config )       =  @ARGV;
 
-my  %metadata       = ();
+my  %metadata       =  ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/kegg};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/kegg};
 
-my  $runs           = qq{$project_home/runs};
-my  $annotation     = qq{$project_home/annotation};
-my  $report         = qq{$project_home/report};
+my  $runs           =  qq{$project_home/runs};
+my  $annotation     =  qq{$project_home/annotation};
+my  $report         =  qq{$project_home/report};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
-my  $picrust2       =  qq{$metadata{project_home}/$metadata{project_id}/picrust2};
-my  $db             =  dirname( abs_path($0) ) . '/../db/kegg';
+my  $picrust2       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/picrust2};
+my  $db             =  $metadata{db} . '/kegg';
 
 my  %catalog_h      =  ();
 my  @samples_t      =  ();

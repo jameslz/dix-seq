@@ -1,0 +1,42 @@
+Bootstrap: docker
+From: quay.io/rockylinux/rockylinux:9.4
+%help
+    dix-seq: An integrated pipeline for fast amplicon data analysis.
+    version: 1.0.0
+%labels
+    Author: LEI ZHANG
+    Contact: zhanglei@logictek.cn
+%runscript
+    dix-seq
+%post
+    dnf install epel-release -y
+    dnf --enablerepo=crb,epel install which wget parallel gcc gcc-gfortran xz-lzma-compat xz-libs xz-devel libicu flexiblas flexiblas-devel harfbuzz harfbuzz-devel ImageMagick glpk java python python-devel perl perl-Switch ImageMagick-perl perl-CPAN perl-DB_File perl-open perl-autodie perl-Env perl-XML-SAX perl-XML-LibXML -y
+    mkdir /opt/tools && cd /opt/tools
+    wget http://biostack.org/binaries/R-4.2.2-x86_64.tar.gz && tar -xzvf R-4.2.2-x86_64.tar.gz && rm R-4.2.2-x86_64.tar.gz
+    export R_HOME=/opt/tools/R-4.2.2/lib64/R
+    export LD_LIBRARY_PATH=/opt/tools/R-4.2.2/lib64/R/lib/:$LD_LIBRARY_PATH
+    export PATH=/opt/tools/R-4.2.2/lib64/R/bin:$PATH
+    pip install --no-cache --trusted-host mirrors.aliyun.com --no-warn-script-location -i http://mirrors.aliyun.com/pypi/simple/ joblib numpy Cython pkgconfig pandas scipy typing-extensions==3.7.4.3 matplotlib lefse rpy2 biom-format
+    wget http://biostack.org/binaries/epa-ng-0.3.8-x86_64.tar.gz && tar -xzvf epa-ng-0.3.8-x86_64.tar.gz && rm epa-ng-0.3.8-x86_64.tar.gz
+    wget http://biostack.org/binaries/gappa-0.8.3-x86_64.tar.gz && tar -xzvf gappa-0.8.3-x86_64.tar.gz && rm gappa-0.8.3-x86_64.tar.gz
+    wget http://biostack.org/binaries/hmmer-3.3.2-x86_64.tar.gz && tar -xzvf hmmer-3.3.2-x86_64.tar.gz && rm hmmer-3.3.2-x86_64.tar.gz
+    wget http://biostack.org/binaries/pandoc-2.14.0.3-x86_64.tar.gz && tar -xzvf pandoc-2.14.0.3-x86_64.tar.gz && rm pandoc-2.14.0.3-x86_64.tar.gz
+    wget http://biostack.org/binaries/KronaTools-2.8.1-x86_64.tar.gz && tar -xzvf KronaTools-2.8.1-x86_64.tar.gz && rm KronaTools-2.8.1-x86_64.tar.gz
+    wget http://biostack.org/binaries/MinPath-1.5-x86_64.tar.gz && tar -xzvf MinPath-1.5-x86_64.tar.gz && rm MinPath-1.5-x86_64.tar.gz
+    wget http://biostack.org/binaries/dix-seq-1.0.0-x86_64.tar.gz && tar -xzvf dix-seq-1.0.0-x86_64.tar.gz && rm dix-seq-1.0.0-x86_64.tar.gz
+    wget http://biostack.org/binaries/picrust2-2.5.2.tar.gz && tar -xzvf picrust2-2.5.2.tar.gz && pip install picrust2-2.5.2/ && cp -r picrust2-2.5.2/picrust2/default_files /usr/local/lib/python3.9/site-packages/picrust2/ && rm -rf picrust2-2.5.2 picrust2-2.5.2.tar.gz
+    wget http://biostack.org/binaries/usearch-11.0.667-x86_64.tar.gz && tar -xzvf usearch-11.0.667-x86_64.tar.gz && rm usearch-11.0.667-x86_64.tar.gz
+    rm -rf /var/cache/dnf && dnf clean all
+%environment
+    export LC_ALL=C.UTF-8
+    export R_HOME=/opt/tools/R-4.2.2/lib64/R
+    export PATH=/opt/tools/R-4.2.2/lib64/R/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/tools/R-4.2.2/lib64/R/lib/:$LD_LIBRARY_PATH
+    export PATH=/opt/tools/MinPath-1.5:$PATH
+    export PATH=/opt/tools/epa-ng-0.3.8/bin:$PATH
+    export PATH=/opt/tools/gappa-0.8.3/bin:$PATH
+    export PATH=/opt/tools/hmmer-3.3.2/bin:$PATH
+    export PATH=/opt/tools/dix-seq-1.0.0:$PATH
+    export PATH=/opt/tools/KronaTools-2.8.1/bin:$PATH
+    export PATH=/opt/tools/pandoc-2.14.0.3/bin:$PATH
+    export PATH=/opt/tools/usearch-11.0.667:$PATH

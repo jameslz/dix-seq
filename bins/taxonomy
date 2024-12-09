@@ -12,24 +12,24 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/taxonomy};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/taxonomy};
 
-my  $classify       = qq{$project_home/classify};
-my  $krona          = qq{$project_home/krona};
-my  $runs           = qq{$project_home/runs};
-my  $bars           = qq{$project_home/bars};
-my  $heatmap        = qq{$project_home/heatmap};
+my  $classify       =  qq{$project_home/classify};
+my  $krona          =  qq{$project_home/krona};
+my  $runs           =  qq{$project_home/runs};
+my  $bars           =  qq{$project_home/bars};
+my  $heatmap        =  qq{$project_home/heatmap};
 
-my  $datasets       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
-my  @taxon_t        = qw/phylum order class family genus/;
-my  %taxon_h        = qw/phylum p order o class c family f  genus g/;
-my  $rank_pattern   = (exists $metadata{ rank_pattern })  ?  $metadata{ rank_pattern } : "phylum 10 class 10 order 10 family 10 genus 10  zotus 10"; 
-my  %rank_h         = split /\s+/, $rank_pattern;
+my  @taxon_t        =  qw/phylum order class family genus/;
+my  %taxon_h        =  qw/phylum p order o class c family f  genus g/;
+my  $rank_pattern   =  (exists $metadata{ rank_pattern })  ?  $metadata{ rank_pattern } : "phylum 10 class 10 order 10 family 10 genus 10  zotus 10"; 
+my  %rank_h         =  split /\s+/, $rank_pattern;
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
-my  $db             =  dirname( abs_path($0) ) . '/../db';
+my  $db             =  $metadata{db};
 
 my  @samples_t      =  ();
 my  %catalog_h      =  (); 
@@ -112,7 +112,7 @@ sub classify_run {
     print EXPORT qq{cp $datasets/zotu_table_freqs.txt $classify/zotu.freqs.txt ;\n};
 
     print EXPORT tsv2xlsx();
-        
+
     close EXPORT;
     system qq{cat $sh | $binaries/gargs -v --nlines 1 -p 1 "{}"\n} if(!$dry_run);
 
@@ -123,6 +123,7 @@ sub level {
     my $level   =  shift;
     my $cmd     =  qq{$binaries/atlas-utils level           \
                         -l $taxon_h{$level}                 \
+                        -c                                  \
                         $datasets/zotu_table_ann.txt        \
                     |$binaries/tsv-utils view -r -          \
                     >$classify/$level.counts.txt ;\n};
@@ -149,7 +150,7 @@ sub lineage {
                         $classify/$level.freqs.txt            \
                         $taxon_h{$level}                      \
                   |$binaries/tsv-utils definition             \
-                        -t levels $db/$metadata{db}.levels -  \
+                        -t levels $db/$metadata{reference}.levels -  \
                   |sed  's/[cgdkocfs]://'                     \
                   >$classify/$level.levels.txt; \n};
        $cmd     =~ s/\s+\n\s+/ /msg;

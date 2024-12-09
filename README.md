@@ -1,63 +1,47 @@
 ## Dix-seq: An integrated pipeline for fast amplicon data analysis
 <hr>
 
-### 1. Abstract
+Update: **version 1.0.0**
 
-The amplicon derived from 16S rRNA genes, 18S rRNA genes, internal transcribed spacer sequences or other functional genes can be used to infer and evaluate microbial diversity or functional gene diversity. With the development of sequencing technologies, large amounts of amplicon data were generated. Several different software or pipelines had been developed for amplicon data analyses. However, most current software/pipelines require multistep and advanced programming skills. Moreover, they are often complex and time-consuming. Here, we introduced an integrated pipeline named Dix-seq for high-throughput amplicon sequence data processing. Dix-seq integrates several different amplicon analysis algorithms and software for diversity analyses of multiple samples. Dix-seq analyzes amplicon sequences efficiently, and exports abundant visual results automatically with only one command in Linux environment. In summary, Dix-seq enables the common/advanced users to generate amplicon analysis results easily and offers a versatile and convenient tool for researchers. 
+Notes: USEARCH (https://github.com/rcedgar/usearch12) was open sourced and donated to the public domain, So we integrated USEARCH (usearch11.0.667_i86linux64) into prebuilt APPTAINER sif image.
 
-### 2. Dependencies and Install
+### 1. abstract
 
-INSTALL.md
+Rapid advancements in sequencing technologies in the past decade have driven the widespread adoption of amplicon analysis. Various software has been developed for amplicon data analysis. However, current software/pipelines often require manual intervention between multiple steps, necessitating a clear understanding of parameters and hindering inexperienced users from automating their workflows. Here, we introduce an integrated pipeline named Dix-seq for high-throughput amplicon sequence data processing. Dix-seq integrated more than 21 algorithms, software, and third-party procedures into eight modules, enabling the analysis from raw amplicon sequences to various statistical and visualization results. The pipeline achieves highlevels of automation through the use of a parameter card file, which consolidates all settings and allows users to complete the entire data analysis with a single command in one step. Furthermore, Dix-seq’s modular design and scalability enable experienced users to fine-tune the workflow to their needs, ensuring reproducible and customizable analysis. Benchmarks performed on datasets from two real-world case studies demonstrated that Dix-seq excels in extracting biologically meaningful patterns, generating publish-ready figures integrated with statistical information, and retaining/detecting variance even at low sequencing depths. In summary, Dix-seq is a fast, convenient, and versatile tool for amplicon analysis. It is tailored towards both entry-level and experienced users, providing publication-ready results with a single command while maintaining customizability and reproducibility.
 
-### 3. Get to start
-
-#### 3.1 install dix-seq
+### 2. build images
 
 ```sh
-git clone https://github.com/jameslz/dix-seq
+apptainer build --fakeroot dix-seq-1.0.0.sif  dix-seq-1.0.0.def
 ```
 
-#### 3.2 install USEARCH
+### 3. INSTALL and get start
+
+Get prebuilt dix-seq sif file and db files from figshare.
 
 ```sh
-wget https://drive5.com/downloads/usearch11.0.667_i86linux32.gz
-gunzip usearch11.0.667_i86linux32.gz
-mv usearch11.0.667_i86linux32 usearch
-chmod -R 775 usearch
-mv  usearch denoise-kit/binaries
-```
+#download sif image
+wget https://figshare.com/ndownloader/files/51022509 -O dix-seq-1.0.0.sif
 
-`Recommend:` use USEARCH 64bit https://www.drive5.com/usearch/buy64bitru.html
+#download db file
+wget  https://figshare.com/ndownloader/files/51060284  -O db.tar.gz
+tar xzvf db.tar.gz
 
-#### 3.3 install USEARCH SINTAX db
+#download test data
+wget https://figshare.com/ndownloader/files/51047609 -O test-data.tar.gz
+tar xzvf test-data.tar.gz; mv test-data/* ./; rm -rf test-data
 
-```sh
-cd dix-seq/db
-wget -O PR2_4.14.zip https://zenodo.org/record/6976950/files/PR2_4.14.zip?download=1
-wget -O rdp_16s_v18_sp.zip https://zenodo.org/record/6976950/files/rdp_16s_v18_sp.zip?download=1
-wget -O unite_10.05.2021.zip https://zenodo.org/record/6976950/files/unite_10.05.2021.zip?download=1
-unzip PR2_4.14.zip
-unzip rdp_16s_v18_sp.zip
-unzip unite_10.05.2021.zip
-../binaries/usearch -makeudb_usearch  rdp_16s_v18_sp.fasta  -output  rdp_16s_v18_sp.udb
-../binaries/usearch -makeudb_usearch  PR2_4.14.fasta  -output  PR2_4.14.udb
-../binaries/usearch -makeudb_usearch  unite_10.05.2021.fasta  -output  unite_10.05.2021.udb
-```
+#modify metadata.txt file, setting project_home,project_id,raw_data,mapping_file and db location.
 
-#### 3.4 run example
+#validate metadata and fastq files.
+apptainer exec dix-seq-1.0.0.sif dix-seq metadata.txt validate
 
-Go to example dir and get the template file
-
-```sh
-dix-seq metadata.txt validate
-dix-seq metadata.txt pipeline
+#use pipeline for standand analysis.
+apptainer exec dix-seq-1.0.0.sif dix-seq metadata.txt pipeline
 ```
 
 
-### 4. citation
-   
-```text 
-Dix-seq: An integrated pipeline for fast amplicon data analysis
-Yongjun wei, Tianqi Ren, Lei Zhang
-bioRxiv 2020.05.11.089748; doi: https://doi.org/10.1101/2020.05.11.089748
-```
+### 4. misc
+
+[Step By Step Data Analysis For Amplicon Sequencing Data](https://github.com/jameslz/dix-seq/wiki/Step-By-Step-Data-Analysis-For-Amplicon-Sequencing-Data)
+[Dix-seq: 扩增子数据分析工作流使用说明](https://logictek.feishu.cn/docx/GzcbdKEs0oBF2dx4avDcaiz3n6d)

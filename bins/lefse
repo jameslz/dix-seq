@@ -14,7 +14,7 @@ my ( $config )      = @ARGV;
 my  %metadata       = ();
 profiling();
 
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/lefse};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/lefse};
 
 my  $profiles       =  qq{$project_home/profiles};
 my  $runs           =  qq{$project_home/runs};
@@ -32,7 +32,7 @@ my  @samples_t      =  ();
 my  $dry_run        =  0;
     $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
 
-my  $classify       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $classify       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my  $kit            =  dirname( abs_path($0) ) . '/../thirdpart/lefse-kit-0.0.1/lefse-kit';
 my  $lefse_para     =  $metadata{lefse_para};

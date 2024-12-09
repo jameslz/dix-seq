@@ -1,0 +1,14 @@
+# 1.0.0
+
+(1). only support usearch 64. https://github.com/rcedgar/usearch_old_binaries/blob/main/bin/usearch11.0.667_i86linux64
+(2). support: GTDB-220.0, RefSeq-2024-11, RDP_16S_V18 , silva 138.2, ITS-2024.4, PR2-5.0.0
+(3). rebuild apptainer sif file.
+
+
+# 0.0.8
+
+(1). valid module.
+(2). remove db directory in source files. add db path in metadata file.
+(3). bug fix: atlas level, add '-c' flag for Integer data type.
+(4). bug fix: maxee parameter
+(5). rebuild apptainer sif file.

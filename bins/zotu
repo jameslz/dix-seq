@@ -12,18 +12,19 @@ my ($config )      = @ARGV;
 my %metadata       = ();
 profile();
 
-my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}/zotu};
+my  $project_home  =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/zotu};
 
-my  $reads         = qq{$project_home/reads};
-my  $unoise        = qq{$project_home/unoise};
-my  $runs          = qq{$project_home/runs};
-my  $report        = qq{$project_home/report};
+my  $reads         =  qq{$project_home/reads};
+my  $unoise        =  qq{$project_home/unoise};
+my  $runs          =  qq{$project_home/runs};
+my  $report        =  qq{$project_home/report};
 
-my  $datasets      = qq{$metadata{project_home}/$metadata{project_id}/primer_strip/reads};
+my  $datasets      =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/primer_strip/reads};
 
 my  $utils         =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
-my  $db            =  dirname( abs_path($0) ) . '/../db';
+my  $db            =  $metadata{db};
+my  $maxee         =  (exists $metadata{maxee}) ?  $metadata{maxee} : 1.0;
 
 my  @samples_t     = ();
 
@@ -45,7 +46,7 @@ sub profile {
     } 
     close PROFILE;
 
-    foreach my $db (qw/mapping_file db unoise3_param/) {
+    foreach my $db (qw/mapping_file db reference unoise3_param/) {
         if(! exists $metadata{$db}){
             print STDERR "[ERR]: please specify the $db metadata.\n";
             exit;
@@ -131,10 +132,10 @@ sub derep_run {
 
 sub fastx_filter {
 
-    my $cmd = qq{$binaries/usearch                       \
+    my $cmd = qq{usearch                                 \
                      -fastq_filter $reads/striped.fastq  \
                      -relabel Filt                       \
-                     -fastq_maxee 1.0                    \
+                     -fastq_maxee $maxee                 \
                      -fastaout  $reads/filtered.fasta    \
                      -threads $metadata{cpus}            \
                      -log $reads/filtered.log; \n};
@@ -145,7 +146,7 @@ sub fastx_filter {
 
 sub fastx_uniques {
 
-    my $cmd = qq{$binaries/usearch                       \
+    my $cmd = qq{usearch                                 \
                    -fastx_uniques $reads/filtered.fasta  \
                    -relabel Uniq                         \
                    -sizeout                              \
@@ -178,7 +179,7 @@ sub unoise_run {
 
 sub unoise {
 
-    my $cmd = qq{$binaries/usearch                      \
+    my $cmd = qq{usearch                                \
                     -unoise3 $reads/derep.fasta         \
                     $metadata{unoise3_param}            \
                     -zotus $unoise/denoise.fasta        \
@@ -192,9 +193,9 @@ sub unoise {
 
 sub align {
 
-    my $cmd = qq{$binaries/usearch                        \
+    my $cmd = qq{usearch                                  \
                     -usearch_global $unoise/denoise.fasta \
-                    -db $db/$metadata{db}.udb             \
+                    -db $db/$metadata{reference}.udb      \
                     -id 0.4                               \
                     -maxhits 1                            \
                     -blast6out $unoise/align.txt          \
@@ -223,7 +224,7 @@ sub convert {
 
 sub otutab {
 
-    my $cmd = qq{$binaries/usearch                      \
+    my $cmd = qq{usearch                                \
                    -otutab  $reads/striped.fastq        \
                    -zotus $report/zotus.fasta           \
                    -strand plus                         \
@@ -250,7 +251,7 @@ sub reorder {
 
 sub counts2freqs {
 
-    my $cmd = qq{$binaries/usearch                      \
+    my $cmd = qq{usearch                                \
                     -otutab_counts2freqs                \
                         $report/zotu_table.txt          \
                     -output                             \
@@ -261,7 +262,7 @@ sub counts2freqs {
 
 sub otutab_stats {
 
-    my $cmd = qq{$binaries/usearch                     \
+    my $cmd = qq{usearch                               \
                     -otutab_stats                      \
                         $report/zotu_table.txt         \
                     -output                            \

@@ -12,19 +12,19 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/picrust2};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/picrust2};
 
-my  $pipeline       = qq{$project_home/pipeline};
-my  $runs           = qq{$project_home/runs};
-my  $prediction     = qq{$project_home/prediction};
-my  $report         = qq{$project_home/report};
+my  $pipeline       =  qq{$project_home/pipeline};
+my  $runs           =  qq{$project_home/runs};
+my  $prediction     =  qq{$project_home/prediction};
+my  $report         =  qq{$project_home/report};
 
-my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
 my  $algo           =  (exists $metadata{tree}) ? $metadata{tree} : 'distmx';
-my  $db             =  dirname( abs_path($0) ) . '/../db/picrust2';
+my  $db             =  $metadata{db} . '/picrust2';
 
 my  %catalog_h      =  ();
 my  @samples_t      =  ();

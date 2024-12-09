@@ -14,7 +14,7 @@ my ( $config )      = @ARGV;
 my  %metadata       = ();
 profiling();
 
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/DESeq2};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/DESeq2};
 
 my  $profiles       =  qq{$project_home/profiles};
 my  $runs           =  qq{$project_home/runs};
@@ -29,7 +29,7 @@ my  $vtype          =  ();
 my  @samples_t      =  ();
 
 my  @ontologies_t   =  qw/phylum class order family genus/;
-my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/taxonomy/classify};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/taxonomy/classify};
 
 my  $dry_run        =  0;
     $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');

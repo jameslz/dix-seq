@@ -7,20 +7,20 @@ use Cwd 'abs_path';
 
 die "Usage:perl $0 <metadata>" if(@ARGV != 1);
 
-my ( $config )      = @ARGV;
+my ( $config )      =  @ARGV;
 
 my  %metadata       = ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
-my  $specaccum      = qq{$project_home/specaccum_curve};
-my  $report         = qq{$specaccum/report};
-my  $runs           = qq{$specaccum/runs};
+my  $specaccum      =  qq{$project_home/specaccum_curve};
+my  $report         =  qq{$specaccum/report};
+my  $runs           =  qq{$specaccum/runs};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
-my  $datasets       = qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my  $dry_run        =  0;
     $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');

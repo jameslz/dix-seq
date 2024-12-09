@@ -12,17 +12,17 @@ my ($config )      = @ARGV;
 my %metadata       = ();
 profile();
 
-my  $project_home  = qq{$metadata{project_home}/$metadata{project_id}/classify};
+my  $project_home  =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify};
 
-my  $runs          = qq{$project_home/runs};
-my  $zotus         = qq{$project_home/zotus};
-my  $classify      = qq{$project_home/classify};
-my  $report        = qq{$project_home/report};
+my  $runs          =  qq{$project_home/runs};
+my  $zotus         =  qq{$project_home/zotus};
+my  $classify      =  qq{$project_home/classify};
+my  $report        =  qq{$project_home/report};
 
 my  $utils         =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries      =  dirname( abs_path($0) ) . '/../binaries';
-my  $datasets      =  qq{$metadata{project_home}/$metadata{project_id}/zotu/report};
-my  $db            =  dirname( abs_path($0) ) . '/../db';
+my  $datasets      =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/zotu/report};
+my  $db            =  $metadata{db};
 
 my  $dry_run       =  0;
     $dry_run       =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');
@@ -53,7 +53,7 @@ sub profile {
     } 
     close PROFILE;
 
-    foreach my $db (qw/mapping_file db classifier/) {
+    foreach my $db (qw/mapping_file db reference classifier/) {
         if(! exists $metadata{$db}){
             print STDERR "[ERR]: please specify the $db metadata.\n";
             exit;
@@ -90,9 +90,9 @@ sub classify {
 
     my $cutoff  =  (exists $metadata{sintax_cutoff }) ? $metadata{sintax_cutoff} : '0.8';
 
-    my $cmd = qq{$binaries/usearch                        \
+    my $cmd = qq{usearch                        \
                      -sintax $datasets/zotus.fasta        \
-                     -db $db/$metadata{db}.udb            \
+                     -db $db/$metadata{reference}.udb     \
                      -strand plus                         \
                      -sintax_cutoff $cutoff               \
                      -tabbedout $classify/classify.txt    \
@@ -294,7 +294,7 @@ sub norm_run {
 sub rare {
 
     my $sample_size = `$binaries/atlas-utils min_size $zotus/zotu_table.txt`;
-    my $cmd = qq{$binaries/usearch                           \
+    my $cmd = qq{usearch                           \
                    -otutab_rare  $zotus/zotu_table.txt       \
                    -sample_size  $sample_size                \
                    -output $zotus/zotu_table_norm.txt; \n};
@@ -318,7 +318,7 @@ sub stats_run {
 
 sub stats {
 
-    my $project = qq{$metadata{project_home}/$metadata{project_id}};
+    my $project = abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
     my $cmd = qq{$binaries/tsv-utils join                             \
                    $project/trimming/report/trimming.stats.txt        \
                    $project/mergepairs/report/mergepairs.stats.txt    \

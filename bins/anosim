@@ -12,20 +12,20 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my $project_home    = qq{$metadata{project_home}/$metadata{project_id}/anosim};
+my $project_home    =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/anosim};
 
-my $report          = qq{$project_home/report};
-my $runs            = qq{$project_home/runs};
-my $subset          = qq{$project_home/subset};
-my $submatrix       = qq{$project_home/submatrix};
+my $report          =  qq{$project_home/report};
+my $runs            =  qq{$project_home/runs};
+my $subset          =  qq{$project_home/subset};
+my $submatrix       =  qq{$project_home/submatrix};
 
 my $utils           =  dirname( abs_path($0) ) . '/../utils';
 my $binaries        =  dirname( abs_path($0) ) . '/../binaries';
-my $bdiv            = qq{$metadata{project_home}/$metadata{project_id}/beta/distmx};
+my $bdiv            =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/beta/distmx};
 
-my @samples_t       = (); 
-my @catalog_t       = ();
-my %catalog_h       = ();
+my @samples_t       =  (); 
+my @catalog_t       =  ();
+my %catalog_h       =  ();
 
 my  $dry_run        =  0;
     $dry_run        =  1 if(exists $metadata{dry_run} && $metadata{dry_run} eq 'T');

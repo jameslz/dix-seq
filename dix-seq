@@ -68,10 +68,10 @@ Examples:
     dix-seq  metadata.txt  summarize
     dix-seq  metadata.txt  pipeline,function_wf,advanced,summarize,report
 
-version: 0.0.7
+version: 1.0.0
 
 Licenced:
-(c) 2019-2022 - LEI ZHANG
+(c) 2019-2024 - LEI ZHANG
 Logic Informatics Co.,Ltd.
 zhanglei\@logicinformatics.com
 
@@ -90,7 +90,7 @@ profiling();
 my $home     =   $metadata{project_home};
 my $logs     =   qq{$home/logs};
 
-open (EXPORT, qq{>$home/run.sh}) || die "$!";
+open (EXPORT, qq{>$home/run.sh}) || die "[ERR]: can't open $home/run.sh $!";
 
 my $fh = *EXPORT;
 
@@ -109,16 +109,17 @@ switch($cmd){
     case 'rank_abundance'        {print EXPORT rank_abundance();}
     case 'specaccum_curve'       {print EXPORT specaccum_curve();}
     case 'pipeline'              {print EXPORT pipeline();}
+    case 'picrust2'              {print EXPORT picrust2();}
+    case 'kegg'                  {print EXPORT kegg();}
+    case 'function_wf'           {print EXPORT function_wf();}
+
+    case 'anosim'                {print EXPORT anosim();}
+    case 'DESeq2'                {print EXPORT DESeq2();}
     case 'lefse'                 {print EXPORT lefse();}
     case 'wilcoxon_rank_sum'     {print EXPORT wilcoxon_rank_sum();}
     case 'kruskal_wallis'        {print EXPORT kruskal_wallis();}
     case 'wilcoxon_rank_sum_wf'  {print EXPORT wilcoxon_rank_sum_wf();}
     case 'kruskal_wallis_wf'     {print EXPORT kruskal_wallis_wf();}
-    case 'anosim'                {print EXPORT anosim();}
-    case 'DESeq2'                {print EXPORT DESeq2();}
-    case 'picrust2'              {print EXPORT picrust2();}
-    case 'kegg'                  {print EXPORT kegg();}
-    case 'function_wf'           {print EXPORT function_wf();}
 
     case 'advanced'              {print EXPORT advanced();}
     case 'summarize'             {print EXPORT summarize();}
@@ -351,15 +352,16 @@ sub combine {
             case 'beta'                 {print $fh beta();}
             case 'rank_abundance'       {print $fh rank_abundance();}
             case 'specaccum_curve'      {print $fh specaccum_curve();}
-            case 'anosim'               {print $fh anosim();}
-            case 'DESeq2'               {print $fh DESeq2();}
             case 'picrust2'             {print $fh picrust2();}
             case 'kegg'                 {print $fh kegg();}
             case 'function_wf'          {print $fh function_wf();}
+            case 'anosim'               {print $fh anosim();}
+            case 'DESeq2'               {print $fh DESeq2();}
+            case 'lefse'                {print $fh lefse();}
             case 'wilcoxon_rank_sum'    {print $fh wilcoxon_rank_sum();}
-            case 'wilcoxon_rank_sum_wf' {print $fh wilcoxon_rank_sum();}
             case 'kruskal_wallis'       {print $fh kruskal_wallis();}
-            case 'kruskal_wallis_wf'    {print $fh kruskal_wallis();}
+            case 'wilcoxon_rank_sum_wf' {print $fh wilcoxon_rank_sum_wf();}
+            case 'kruskal_wallis_wf'    {print $fh kruskal_wallis_wf();}
             case 'pipeline'             {print $fh pipeline();}
             case 'advanced'             {print $fh advanced();}
             case 'summarize'            {print $fh summarize();}

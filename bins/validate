@@ -7,9 +7,9 @@ use Cwd 'abs_path';
 
 die "Usage:perl $0 <metadata>" if(@ARGV != 1);
 
-my ($config)        = @ARGV;
-my  %metadata       = ();
-my  @samples_t      = ();
+my ($config)        =  @ARGV;
+my  %metadata       =  ();
+my  @samples_t      =  ();
 
 print_para();
 mapping_file();
@@ -35,7 +35,7 @@ sub print_para {
     print qq{\n\n[1]: check parameter available:\n\n};
 
 
-    foreach my $para (qw/project_home project_id raw_data mapping_file cpus parallel threads trim_param mergepairs_param search_pcr_param maxee unoise3_param db sintax_cutoff filter tree rarefaction text pathway vegdist/) {
+    foreach my $para (qw/project_home project_id raw_data mapping_file cpus parallel threads trim_param mergepairs_param search_pcr_param db maxee unoise3_param reference sintax_cutoff filter tree rarefaction text pathway vegdist/) {
         
         if(exists $metadata{$para}){
             print qq{parameter:[$para]\t[$metadata{$para}]\t\e[1;41mPASS\e[0m\n};
@@ -75,8 +75,6 @@ sub mapping_file {
 }
 
 sub inspect {
-    
-  
 
     my $rt     = 0;
     my $sample = $samples_t[0];
@@ -105,18 +103,10 @@ sub inspect {
         my $rp = qq{$metadata{raw_data}/$s\_2.$t};
 
         my $q  = 0;
+        $q++ if(-e $fp);
+        $q++ if(-e $rp);
 
-        if(!$fp){
-            print STDERR qq{[ERR]: can't get locat $sample: $fp \n};
-            $q++;
-        }
-
-        if(!$rp){
-            print STDERR qq{[ERR]: can't get locat $sample: $rp \n};
-            $q++;
-        }
-
-        if($q){
+        if($q != 2){
             print qq{$s:\t$fp,$rp\t\e[1;45mFail\e[0m\n};
         }else{
             print qq{$s:\t$fp,$rp\t\e[1;41mPASS\e[0m\n};

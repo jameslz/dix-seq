@@ -18,7 +18,7 @@ my  %metadata       = ();
 profiling();
 
 my  $db             =  $opts{d};
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
 my  $kruskal_wallis =  qq{$project_home/kruskal_wallis/$db};
 my  $profiles       =  qq{$kruskal_wallis/profiles};
@@ -59,7 +59,7 @@ sub submit {
 
 sub set_para {
 
-    my  $fp    = qq{$metadata{project_home}/$metadata{project_id}};
+    my  $fp    = abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 
     switch($db){   
       case 'taxonomy'     { $datasets   =  qq{$project_home/taxonomy/classify}}

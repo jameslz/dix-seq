@@ -12,12 +12,12 @@ my ($config)        = @ARGV;
 my %metadata        = ();
 profiling();
 
-my  $project_home   =  qq{$metadata{project_home}/$metadata{project_id}/trimming};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/trimming};
 my  $runs           =  qq{$project_home/runs};
 my  $reads          =  qq{$project_home/reads};
 my  $report         =  qq{$project_home/report};
 
-my  $datasets       =  $metadata{raw_data};
+my  $datasets       =  abs_path($metadata{raw_data});
 my  @samples_t      =  ();
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
@@ -79,7 +79,7 @@ sub make_fs {
 
 sub trimming_run {  
 
-    my $sh = qq{$runs/trimming.sh};    
+    my $sh = qq{$runs/trimming.sh};
     open(EXPORT, qq{>$sh} ) || die "[ERR]: can't open $sh $!";
     
     foreach my $sample ( @samples_t ){   

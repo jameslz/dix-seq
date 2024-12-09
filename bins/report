@@ -12,7 +12,7 @@ my ($config)       = @ARGV;
 my %metadata       = ();
 profile();
 
-my  $project_home  =  qq{$metadata{project_home}/$metadata{project_id}};
+my  $project_home  =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}};
 my  $summarize     =  qq{$project_home/summarize};
 my  $runs          =  qq{$summarize/runs};
 

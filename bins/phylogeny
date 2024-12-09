@@ -12,14 +12,14 @@ my ($config )       = @ARGV;
 my %metadata        = ();
 profile();
 
-my  $project_home   = qq{$metadata{project_home}/$metadata{project_id}/phylogeny};
+my  $project_home   =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/phylogeny};
 
-my  $placement      = qq{$project_home/placement};
-my  $clust          = qq{$project_home/clust};
-my  $runs           = qq{$project_home/runs};
-my  $report         = qq{$project_home/report};
+my  $placement      =  qq{$project_home/placement};
+my  $clust          =  qq{$project_home/clust};
+my  $runs           =  qq{$project_home/runs};
+my  $report         =  qq{$project_home/report};
  
-my  $datasets       =  qq{$metadata{project_home}/$metadata{project_id}/classify/zotus};
+my  $datasets       =  abs_path($metadata{project_home}) . qq{/$metadata{project_id}/classify/zotus};
 
 my  $utils          =  dirname( abs_path($0) ) . '/../utils';
 my  $binaries       =  dirname( abs_path($0) ) . '/../binaries';
@@ -86,7 +86,7 @@ sub distmx_run {
 
 sub calc_distmx {
  
-  my $cmd   = qq{$binaries/usearch                              \
+  my $cmd   = qq{usearch                                        \
                     -calc_distmx $datasets/zotus.fasta          \
                     -tabbedout $clust/distmx.txt                \
                     -maxdist 0.2 -termdist 0.3  ;\n};
@@ -97,7 +97,7 @@ sub calc_distmx {
 
 sub cluster_aggd {
 
-  my $cmd   = qq{$binaries/usearch                              \
+  my $cmd   = qq{usearch                                        \
                     -cluster_aggd $clust/distmx.txt             \
                     -treeout $report/zotus.tree                 \
                     -clusterout $clust/clusters.txt             \
@@ -153,7 +153,7 @@ sub labels {
 
 sub subtree {
   
-  my $cmd   = qq{$binaries/usearch                       \
+  my $cmd   = qq{usearch                                 \
                     -tree_subset $placement/placed.tree  \
                     -labels $placement/zotus.txt         \
                     -newickout $report/zotus.tree        \
